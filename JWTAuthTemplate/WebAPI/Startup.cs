@@ -37,7 +37,6 @@ namespace JWTAuthTemplate.WebAPI
 
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
-            builder.Services.AddSwaggerGen();
 
             builder.Configuration["JWT:Secret"] = Environment.GetEnvironmentVariable("JWT_SECRET") ?? builder.Configuration["JWT:Secret"];
             builder.Configuration["JWT:ValidAudience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? builder.Configuration["JWT:ValidAudience"];
@@ -132,6 +131,13 @@ namespace JWTAuthTemplate.WebAPI
                 builder.Services.AddSwaggerGen(c =>
                 {
                     c.SwaggerDoc("v1", new() { Title = "JWTAuthTemplate", Version = "v1"});
+
+                    c.MapType<IFormFile>(() => new OpenApiSchema
+                    {
+                        Type = "string",
+                        Format = "binary"
+                    });
+
                     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                     {
                         In = ParameterLocation.Header,
