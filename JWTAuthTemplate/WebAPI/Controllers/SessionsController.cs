@@ -45,7 +45,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers
             try
             {
                 var status = await _sessionService.GetLatestUserSessionStatusAsync();
-                return status is not null ? Ok(status) : NotFound("No session status found for current user");
+                return status is not null ? Ok(status) : Ok(null);
             }
             catch (ArgumentException ex)
             {

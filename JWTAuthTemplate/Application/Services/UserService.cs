@@ -118,6 +118,7 @@ namespace JWTAuthTemplate.Application.Services
             {
                 Id = x.Id,
                 Username = x.UserName,
+                Email = x.Email,
                 CreateDate = x.CreateDate,
                 Roles = new List<UserRoleDTO>(x.Roles.Select(r => new UserRoleDTO()
                 {

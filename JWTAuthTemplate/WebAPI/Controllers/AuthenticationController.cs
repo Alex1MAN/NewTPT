@@ -27,7 +27,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
         {
-            return await ExecuteSafeAsync(() => _userService.Register(dto));
+            return await ExecuteRegisterSafeAsync(() => _userService.Register(dto));
         }
 
 
@@ -56,6 +56,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers
                         SameSite = SameSiteMode.Strict,
                         Expires = DateTimeOffset.UtcNow.AddDays(30)
                     });
+                return Ok(authResult);
             });
         }
 
@@ -63,8 +64,15 @@ namespace JWTAuthTemplate.WebAPI.Controllers
         [HttpPost("logout")]
         public async Task<IActionResult> Logout()
         {
-            return await ExecuteSafeAsync(async () => await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme));
+            return await ExecuteSafeAsync(async () =>
+            {
+                await HttpContext.SignOutAsync(
+                    CookieAuthenticationDefaults.AuthenticationScheme);
+
+                return Ok(new { message = "Выход выполнен успешно" });
+            });
         }
+
 
 
         [HttpPost("RefreshToken")]

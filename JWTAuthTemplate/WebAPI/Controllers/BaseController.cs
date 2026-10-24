@@ -5,20 +5,25 @@ namespace JWTAuthTemplate.WebAPI.Controllers;
 
 public abstract class BaseController : ControllerBase
 {
-    protected async Task<IActionResult> ExecuteSafeAsync(Func<Task> action)
+    protected async Task<IActionResult> ExecuteRegisterSafeAsync(
+    Func<Task<(bool Success, string ErrorMessage)>> action)
     {
         try
         {
-            await action();
-            return Ok();
+            var result = await action();
+
+            if (!result.Success)
+                return BadRequest(new { message = result.ErrorMessage });
+
+            return Ok(new { success = true });
         }
         catch (ValidationException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(new { message = ex.Message });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Problem(statusCode: 500, detail: ex.Message);
+            return Problem(statusCode: 500, detail: "¬нутренн€€ ошибка сервера.");
         }
     }
 

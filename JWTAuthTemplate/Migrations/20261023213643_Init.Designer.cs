@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace JWTAuthTemplate.Migrations
 {
     [DbContext(typeof(Context))]
-    [Migration("20260925183255_AddDocumentVersioning")]
-    partial class AddDocumentVersioning
+    [Migration("20261023213643_Init")]
+    partial class Init
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
