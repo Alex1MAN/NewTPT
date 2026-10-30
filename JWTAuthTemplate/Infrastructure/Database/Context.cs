@@ -17,10 +17,19 @@ namespace JWTAuthTemplate.Infrastructure.Database
         public DbSet<DocumentVersion> DocumentVersions { get; set; }
 
         public DbSet<UserSessionStatus> UserSessionStatuses { get; set; }
+        public DbSet<ChunkUploadSession> ChunkUploadSessions { get; set; }
+        public DbSet<UploadPart> UploadParts { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<ChunkUploadSession>(e =>
+            {
+                e.HasKey(s => s.Key);
+                e.Property(s => s.Key).HasMaxLength(64);
+                e.HasMany(s => s.Parts).WithOne().HasForeignKey(p => p.SessionKey).OnDelete(DeleteBehavior.Cascade);
+            });
+            modelBuilder.Entity<UploadPart>().HasKey(p => new { p.SessionKey, p.ChunkIndex });
 
             // === Существующие настройки (оставляем без изменений) ===
             modelBuilder.Entity<ApplicationUser>(e =>

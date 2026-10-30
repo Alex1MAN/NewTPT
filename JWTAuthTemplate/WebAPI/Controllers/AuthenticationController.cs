@@ -24,14 +24,14 @@ namespace JWTAuthTemplate.WebAPI.Controllers
         }
 
 
-        [HttpPost("register")]
+        [HttpPost("Register")]
         public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
         {
-            return await ExecuteSafeAsync(() => _userService.Register(dto));
+            return await ExecuteRegisterSafeAsync(() => _userService.Register(dto));
         }
 
 
-        [HttpPost("login")]
+        [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginDTO dto)
         {
             return await ExecuteSafeAsync(async () =>
@@ -56,15 +56,34 @@ namespace JWTAuthTemplate.WebAPI.Controllers
                         SameSite = SameSiteMode.Strict,
                         Expires = DateTimeOffset.UtcNow.AddDays(30)
                     });
+                return Ok(authResult);
             });
         }
 
 
-        [HttpPost("logout")]
+        [HttpPost("Logout")]
         public async Task<IActionResult> Logout()
         {
-            return await ExecuteSafeAsync(async () => await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme));
+            return await ExecuteSafeAsync(async () =>
+            {
+                await HttpContext.SignOutAsync(
+                    CookieAuthenticationDefaults.AuthenticationScheme);
+
+                return Ok(true);
+            });
         }
+
+        [HttpPost("AddRole")]
+        public Task<IActionResult> AddRole([FromBody] RoleDTO role, [FromServices] IRoleService service)
+            => ExecuteSafeAsync(async () =>
+            {
+                if (!await service.CreateRoleAsync(role.Name!)) return Conflict("Role already exists or cannot be created.");
+                return Ok(true);
+            });
+
+        [HttpGet("GetRoles")]
+        public Task<IActionResult> GetRoles([FromServices] IRoleService service)
+            => ExecuteSafeAsync(async () => Ok(await service.GetAllRolesAsync()));
 
 
         [HttpPost("RefreshToken")]

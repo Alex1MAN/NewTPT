@@ -7,6 +7,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "JWTAuthTemplate", "JWTAuthT
 EndProject
 Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "docker-compose.dcproj", "{FD1CA102-6AE2-426B-A88D-F4014E3C43DD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JWTAuthTemplate.Tests", "JWTAuthTemplate.Tests\JWTAuthTemplate.Tests.csproj", "{8DF1AE83-F63D-4E43-B371-53DDE8B1B4E2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{FD1CA102-6AE2-426B-A88D-F4014E3C43DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FD1CA102-6AE2-426B-A88D-F4014E3C43DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FD1CA102-6AE2-426B-A88D-F4014E3C43DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8DF1AE83-F63D-4E43-B371-53DDE8B1B4E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8DF1AE83-F63D-4E43-B371-53DDE8B1B4E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8DF1AE83-F63D-4E43-B371-53DDE8B1B4E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8DF1AE83-F63D-4E43-B371-53DDE8B1B4E2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

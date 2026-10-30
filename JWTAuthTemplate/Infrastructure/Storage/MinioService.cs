@@ -16,15 +16,17 @@ using System.Data;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace JWTAuthTemplate.Application.Services;
+namespace JWTAuthTemplate.Infrastructure.Storage;
 
 public class MinioService : IMinioService
 {
     private readonly MinioClient _minioClient;
     private readonly Context _context;
+    private readonly MinioSettingsDTO _settings;
 
     public MinioService(IOptions<MinioSettingsDTO> minioSettings, Context context)
     {
+        _settings = minioSettings.Value;
         _minioClient = (MinioClient?)new MinioClient()
             .WithEndpoint(minioSettings.Value.Endpoint)
             .WithCredentials(minioSettings.Value.AccessKey, minioSettings.Value.SecretKey)
@@ -32,7 +34,7 @@ public class MinioService : IMinioService
         _context = context ?? throw new ArgumentNullException(nameof(context));
     }
 
-    #region Работа с бакетами
+    #region Р Р°Р±РѕС‚Р° СЃ Р±Р°РєРµС‚Р°РјРё
 
     public async Task CreateBucketAsync(string bucketName)
     {
@@ -46,7 +48,7 @@ public class MinioService : IMinioService
 
     #endregion
 
-    #region Работа с файлами в MinIO
+    #region Р Р°Р±РѕС‚Р° СЃ С„Р°Р№Р»Р°РјРё РІ MinIO
 
     public async Task<string> GetObjectETagAsync(string bucketName, string objectName)
     {
@@ -89,21 +91,60 @@ public class MinioService : IMinioService
             .WithContentType("application/octet-stream"));
     }
 
+    public async Task<Stream> GetFileAsync(string bucketName, string objectName, long maxBytes)
+    {
+        var stat = await _minioClient.StatObjectAsync(new StatObjectArgs().WithBucket(bucketName).WithObject(objectName));
+        if (stat.Size > maxBytes) throw new ArgumentException("File exceeds size limit.");
+        var result = new MemoryStream();
+        try
+        {
+            await _minioClient.GetObjectAsync(new GetObjectArgs().WithBucket(bucketName).WithObject(objectName)
+                .WithCallbackStream(async (stream, ct) =>
+                {
+                    var buffer = new byte[81920];
+                    int count;
+                    while ((count = await stream.ReadAsync(buffer, ct)) > 0)
+                    {
+                        if (result.Length + count > maxBytes) throw new ArgumentException("File exceeds size limit.");
+                        await result.WriteAsync(buffer.AsMemory(0, count), ct);
+                    }
+                }));
+            result.Position = 0;
+            return result;
+        }
+        catch { result.Dispose(); throw; }
+    }
+
     public async Task<string> GetFileUrlAsync(string bucketName, string objectName)
     {
-        var stream = await GetFileAsync(bucketName, objectName);
-        stream.Position = 0;
-        using var reader = new StreamReader(stream);
-        return await reader.ReadToEndAsync();
+        if (!string.IsNullOrWhiteSpace(_settings.PublicEndpoint))
+        {
+            using var publicClient = new MinioClient().WithEndpoint(_settings.PublicEndpoint)
+                .WithCredentials(_settings.AccessKey, _settings.SecretKey).WithRegion("us-east-1").Build();
+            return await publicClient.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+                .WithBucket(bucketName).WithObject(objectName).WithExpiry(3600));
+        }
+        return await _minioClient.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+            .WithBucket(bucketName).WithObject(objectName).WithExpiry(3600));
+    }
+
+    public Task UploadFileAsync2(string bucketName, string objectName, Stream fileStream, long fileSize)
+        => UploadFileAsync(bucketName, objectName, fileStream, fileSize);
+
+    public async Task UploadFileAsync(string bucketName, string objectName, string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        await UploadFileAsync(bucketName, objectName, stream, stream.Length);
     }
 
     #endregion
 
-    #region Работа с документами и версиями
+    #region Р Р°Р±РѕС‚Р° СЃ РґРѕРєСѓРјРµРЅС‚Р°РјРё Рё РІРµСЂСЃРёСЏРјРё
 
     public async Task<UploadResultDTO> UploadFilesAsync(string bucketName, List<IFormFile> filesData)
     {
-        if (filesData == null || !filesData.Any())
+        if (string.IsNullOrWhiteSpace(bucketName) || filesData == null || !filesData.Any() ||
+            filesData.Any(f => f == null || f.Length == 0))
         {
             throw new ArgumentException("No files provided for upload");
         }
@@ -114,6 +155,9 @@ public class MinioService : IMinioService
             References = new List<FileReferenceDTO>()
         };
 
+        if (!await _context.Users.AnyAsync(u => u.Id == bucketName))
+            throw new KeyNotFoundException("User not found.");
+        await using var transaction = await _context.Database.BeginTransactionAsync();
         foreach (var fileData in filesData)
         {
             if (fileData == null || fileData.Length == 0)
@@ -124,7 +168,7 @@ public class MinioService : IMinioService
             var fileName = fileData.FileName;
             var fileExtension = Path.GetExtension(fileName).Replace(".", "");
 
-            // Создаём документ
+            // РЎРѕР·РґР°С‘Рј РґРѕРєСѓРјРµРЅС‚
             var document = new Document
             {
                 UserId = bucketName,
@@ -137,17 +181,17 @@ public class MinioService : IMinioService
             _context.Documents.Add(document);
             await _context.SaveChangesAsync();
 
-            // Генерируем путь в MinIO: {userId}/{documentId}/v1_{fileName}
+            // Р“РµРЅРµСЂРёСЂСѓРµРј РїСѓС‚СЊ РІ MinIO: {userId}/{documentId}/v1_{fileName}
             var minioObjectName = $"{bucketName}/{document.Id}/v1_{fileName}";
 
-            // Загружаем файл в MinIO
+            // Р—Р°РіСЂСѓР¶Р°РµРј С„Р°Р№Р» РІ MinIO
             using var memoryStream = fileData.OpenReadStream();
             await UploadFileAsync(bucketName, minioObjectName, memoryStream, fileData.Length);
 
-            // Получаем ETag
+            // РџРѕР»СѓС‡Р°РµРј ETag
             var etag = await GetObjectETagAsync(bucketName, minioObjectName);
 
-            // Создаём первую версию
+            // РЎРѕР·РґР°С‘Рј РїРµСЂРІСѓСЋ РІРµСЂСЃРёСЋ
             var version = new DocumentVersion
             {
                 DocumentId = document.Id,
@@ -162,15 +206,21 @@ public class MinioService : IMinioService
             _context.DocumentVersions.Add(version);
             await _context.SaveChangesAsync();
 
-            // Обновляем CurrentVersionId у документа
+            // РћР±РЅРѕРІР»СЏРµРј CurrentVersionId Сѓ РґРѕРєСѓРјРµРЅС‚Р°
             document.CurrentVersionId = version.Id;
+            _context.UserReferencesInMinio.Add(new UserReferencesInMinio
+            {
+                UserId = bucketName, FileName = fileName, FileExtension = fileExtension, FileReferenceMinio = etag
+            });
             await _context.SaveChangesAsync();
 
-            // Добавляем в результат
+            // Р”РѕР±Р°РІР»СЏРµРј РІ СЂРµР·СѓР»СЊС‚Р°С‚
             result.References.Add(new FileReferenceDTO
             {
                 DocumentId = document.Id,
                 FileName = fileName,
+                FileReferenceMinio = etag,
+                MinioObjectName = minioObjectName,
                 FileExtension = fileExtension,
                 CurrentVersionNumber = 1,
                 CreatedAt = document.CreatedAt,
@@ -179,6 +229,7 @@ public class MinioService : IMinioService
         }
 
         result.Count = result.References.Count;
+        await transaction.CommitAsync();
         return result;
     }
 
@@ -192,6 +243,8 @@ public class MinioService : IMinioService
             {
                 DocumentId = d.Id,
                 FileName = d.OriginalName,
+                FileReferenceMinio = d.CurrentVersion != null ? d.CurrentVersion.ETag : "",
+                MinioObjectName = d.CurrentVersion != null ? d.CurrentVersion.MinioObjectName : "",
                 FileExtension = d.FileExtension,
                 CurrentVersionNumber = d.CurrentVersion != null ? d.CurrentVersion.VersionNumber : 0,
                 CreatedAt = d.CreatedAt,
@@ -217,6 +270,8 @@ public class MinioService : IMinioService
         {
             DocumentId = document.Id,
             FileName = document.OriginalName,
+            FileReferenceMinio = document.CurrentVersion?.ETag ?? "",
+            MinioObjectName = document.CurrentVersion?.MinioObjectName ?? "",
             FileExtension = document.FileExtension,
             CurrentVersionNumber = document.CurrentVersion?.VersionNumber ?? 0,
             CreatedAt = document.CreatedAt,
@@ -280,27 +335,27 @@ public class MinioService : IMinioService
         var fileName = file.FileName;
         var fileExtension = Path.GetExtension(fileName).Replace(".", "");
 
-        // Проверяем, что расширение совпадает
+        // РџСЂРѕРІРµСЂСЏРµРј, С‡С‚Рѕ СЂР°СЃС€РёСЂРµРЅРёРµ СЃРѕРІРїР°РґР°РµС‚
         if (!string.Equals(document.FileExtension, fileExtension, StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException($"File extension mismatch. Expected: {document.FileExtension}, got: {fileExtension}");
         }
 
-        // Определяем номер новой версии
+        // РћРїСЂРµРґРµР»СЏРµРј РЅРѕРјРµСЂ РЅРѕРІРѕР№ РІРµСЂСЃРёРё
         var maxVersionNumber = document.Versions.Max(v => v.VersionNumber);
         var newVersionNumber = maxVersionNumber + 1;
 
-        // Генерируем путь в MinIO: {userId}/{documentId}/v{N}_{fileName}
+        // Р“РµРЅРµСЂРёСЂСѓРµРј РїСѓС‚СЊ РІ MinIO: {userId}/{documentId}/v{N}_{fileName}
         var minioObjectName = $"{document.UserId}/{document.Id}/v{newVersionNumber}_{fileName}";
 
-        // Загружаем файл в MinIO
+        // Р—Р°РіСЂСѓР¶Р°РµРј С„Р°Р№Р» РІ MinIO
         using var memoryStream = file.OpenReadStream();
         await UploadFileAsync(document.UserId, minioObjectName, memoryStream, file.Length);
 
-        // Получаем ETag
+        // РџРѕР»СѓС‡Р°РµРј ETag
         var etag = await GetObjectETagAsync(document.UserId, minioObjectName);
 
-        // Создаём новую версию
+        // РЎРѕР·РґР°С‘Рј РЅРѕРІСѓСЋ РІРµСЂСЃРёСЋ
         var version = new DocumentVersion
         {
             DocumentId = document.Id,
@@ -315,7 +370,7 @@ public class MinioService : IMinioService
         _context.DocumentVersions.Add(version);
         await _context.SaveChangesAsync();
 
-        // Обновляем CurrentVersionId у документа
+        // РћР±РЅРѕРІР»СЏРµРј CurrentVersionId Сѓ РґРѕРєСѓРјРµРЅС‚Р°
         document.CurrentVersionId = version.Id;
         document.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
@@ -343,7 +398,7 @@ public class MinioService : IMinioService
             throw new ArgumentException($"Document with ID {documentId} not found");
         }
 
-        // Удаляем все версии из MinIO
+        // РЈРґР°Р»СЏРµРј РІСЃРµ РІРµСЂСЃРёРё РёР· MinIO
         foreach (var version in document.Versions)
         {
             try
@@ -355,14 +410,20 @@ public class MinioService : IMinioService
             }
             catch (Exception ex)
             {
-                // Логируем ошибку, но не прерываем удаление
+                // Р›РѕРіРёСЂСѓРµРј РѕС€РёР±РєСѓ, РЅРѕ РЅРµ РїСЂРµСЂС‹РІР°РµРј СѓРґР°Р»РµРЅРёРµ
                 Console.WriteLine($"Failed to delete object {version.MinioObjectName} from MinIO: {ex.Message}");
             }
         }
 
-        // Удаляем документ из БД (каскадно удалятся все версии)
+        // Р Р°Р·СЂС‹РІР°РµРј С†РёРєР» Document -> CurrentVersion -> Document РґРѕ СѓРґР°Р»РµРЅРёСЏ.
+        // РћР±Рµ Р·Р°РїРёСЃРё Р‘Р” РЅР°С…РѕРґСЏС‚СЃСЏ РІ РѕРґРЅРѕР№ С‚СЂР°РЅР·Р°РєС†РёРё.
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        document.CurrentVersionId = null;
+        document.CurrentVersion = null;
+        await _context.SaveChangesAsync();
         _context.Documents.Remove(document);
         await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 
     public async Task DeleteDocumentVersionAsync(int versionId)
@@ -376,7 +437,7 @@ public class MinioService : IMinioService
             throw new ArgumentException($"Version with ID {versionId} not found");
         }
 
-        // Проверяем, что это не единственная версия
+        // РџСЂРѕРІРµСЂСЏРµРј, С‡С‚Рѕ СЌС‚Рѕ РЅРµ РµРґРёРЅСЃС‚РІРµРЅРЅР°СЏ РІРµСЂСЃРёСЏ
         var versionsCount = await _context.DocumentVersions
             .CountAsync(v => v.DocumentId == version.DocumentId);
 
@@ -385,7 +446,7 @@ public class MinioService : IMinioService
             throw new InvalidOperationException("Cannot delete the last version of a document. Delete the entire document instead.");
         }
 
-        // Удаляем файл из MinIO
+        // РЈРґР°Р»СЏРµРј С„Р°Р№Р» РёР· MinIO
         try
         {
             var removeObjectArgs = new RemoveObjectArgs()
@@ -398,7 +459,7 @@ public class MinioService : IMinioService
             Console.WriteLine($"Failed to delete object {version.MinioObjectName} from MinIO: {ex.Message}");
         }
 
-        // Если удаляем текущую версию, обновляем CurrentVersionId
+        // Р•СЃР»Рё СѓРґР°Р»СЏРµРј С‚РµРєСѓС‰СѓСЋ РІРµСЂСЃРёСЋ, РѕР±РЅРѕРІР»СЏРµРј CurrentVersionId
         if (version.Document.CurrentVersionId == versionId)
         {
             var previousVersion = await _context.DocumentVersions
@@ -410,14 +471,14 @@ public class MinioService : IMinioService
             version.Document.UpdatedAt = DateTime.UtcNow;
         }
 
-        // Удаляем версию из БД
+        // РЈРґР°Р»СЏРµРј РІРµСЂСЃРёСЋ РёР· Р‘Р”
         _context.DocumentVersions.Remove(version);
         await _context.SaveChangesAsync();
     }
 
     #endregion
 
-    #region Парсинг содержимого файлов
+    #region РџР°СЂСЃРёРЅРі СЃРѕРґРµСЂР¶РёРјРѕРіРѕ С„Р°Р№Р»РѕРІ
 
     public async Task<string> GetExcelFileContentAsJson(string bucketName, string objectName)
     {
@@ -608,7 +669,7 @@ public class MinioService : IMinioService
 
     #endregion
 
-    #region Вспомогательные методы
+    #region Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ РјРµС‚РѕРґС‹
 
     private string EscapeJson(string s)
     {

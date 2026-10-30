@@ -1,47 +1,57 @@
-version: '3.4'
-
 services:
   db:
-    image: postgres
-    container_name: postgre
-    restart: always
+    image: postgres:16
+    restart: unless-stopped
     environment:
-        POSTGRES_USER: postgres
-        POSTGRES_PASSWORD: root
-        POSTGRES_DB: JWTAuthTemplate
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
+      POSTGRES_DB: JWTAuthTemplate
     ports:
       - "5432:5432"
-  
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d JWTAuthTemplate"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
   minio:
-    image: minio/minio:RELEASE.2024-01-18T22-51-28Z-cpuv1
-    container_name: minio
+    image: newtpt-minio:2024-01-18
+    build:
+      context: .
+      dockerfile: docker/minio.Dockerfile
+    restart: unless-stopped
     ports:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
-
   jwtauthtemplate:
     image: ${DOCKER_REGISTRY-}jwtauthtemplate
     build:
       context: .
       dockerfile: JWTAuthTemplate/Dockerfile
-    links:
-       - "db:db"
     depends_on:
-        - db
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
     environment:
-       JWT_SECRET: ChangeMeChangeMe123321ChangeMeChangeMeChangeMe123!!!!//...///
-       JWT_ISSUER: http://localhost:5000
-       JWT_AUDIENCE: http://localhost:5000
-       CONNECTION_STRING: Host=localhost;Port=5432;Database=JWTAuthTemplate;Username=postgres;Password=ChangeMe123!
+      ASPNETCORE_URLS: http://+:80
+      JWT_SECRET: ${JWT_SECRET:-ChangeMeChangeMe123321ChangeMeChangeMeChangeMe123!!!!}
+      JWT_ISSUER: http://localhost:5505
+      JWT_AUDIENCE: http://localhost:5505
+      CONNECTION_STRING: Host=db;Port=5432;Database=JWTAuthTemplate;Username=postgres;Password=${POSTGRES_PASSWORD:-root}
+      MinioSettings__Endpoint: minio:9000
+      MinioSettings__PublicEndpoint: ${MINIO_PUBLIC_ENDPOINT:-localhost:9000}
+      MinioSettings__AccessKey: ${MINIO_ROOT_USER:-minioadmin}
+      MinioSettings__SecretKey: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-        - "5505:80" 
-        - "5506:443"
-
+      - "5505:80"
 volumes:
+  postgres_data:
   minio_data:

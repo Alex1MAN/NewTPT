@@ -6,7 +6,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers;
 
 [ApiController]
 [Route("minio")]
-public class MinioController : BaseController
+public partial class MinioController : BaseController
 {
     private readonly IMinioService _minioService;
 
@@ -15,24 +15,25 @@ public class MinioController : BaseController
         _minioService = minioService;
     }
 
-    #region Бакеты
+    #region Р‘Р°РєРµС‚С‹
 
     [HttpPost("create-bucket")]
+    [HttpPost("CreateBucket")]
     public async Task<IActionResult> CreateBucket(string bucketName)
     {
         return await ExecuteSafeAsync(async () =>
         {
             await _minioService.CreateBucketAsync(bucketName);
-            return Ok($"Bucket {bucketName} created");
+            return Ok(true);
         });
     }
 
     #endregion
 
-    #region Загрузка файлов (создание документов)
+    #region Р—Р°РіСЂСѓР·РєР° С„Р°Р№Р»РѕРІ (СЃРѕР·РґР°РЅРёРµ РґРѕРєСѓРјРµРЅС‚РѕРІ)
 
     /// <summary>
-    /// Загрузить файлы. Для каждого файла создаётся документ с первой версией.
+    /// Р—Р°РіСЂСѓР·РёС‚СЊ С„Р°Р№Р»С‹. Р”Р»СЏ РєР°Р¶РґРѕРіРѕ С„Р°Р№Р»Р° СЃРѕР·РґР°С‘С‚СЃСЏ РґРѕРєСѓРјРµРЅС‚ СЃ РїРµСЂРІРѕР№ РІРµСЂСЃРёРµР№.
     /// </summary>
     [HttpPost("upload-files")]
     public async Task<IActionResult> UploadFiles(string bucketName, [FromForm] List<IFormFile> filesData)
@@ -45,7 +46,7 @@ public class MinioController : BaseController
     }
 
     /// <summary>
-    /// Низкоуровневая загрузка одного файла в MinIO (без создания документа)
+    /// РќРёР·РєРѕСѓСЂРѕРІРЅРµРІР°СЏ Р·Р°РіСЂСѓР·РєР° РѕРґРЅРѕРіРѕ С„Р°Р№Р»Р° РІ MinIO (Р±РµР· СЃРѕР·РґР°РЅРёСЏ РґРѕРєСѓРјРµРЅС‚Р°)
     /// </summary>
     [HttpPost("upload-file")]
     public async Task<IActionResult> UploadFile(string bucketName, string objectName, IFormFile file)
@@ -54,16 +55,16 @@ public class MinioController : BaseController
         {
             using var stream = file.OpenReadStream();
             await _minioService.UploadFileAsync(bucketName, objectName, stream, file.Length);
-            return Ok($"File {objectName} uploaded to bucket {bucketName}");
+            return Ok(true);
         });
     }
 
     #endregion
 
-    #region Документы
+    #region Р”РѕРєСѓРјРµРЅС‚С‹
 
     /// <summary>
-    /// Получить все документы пользователя
+    /// РџРѕР»СѓС‡РёС‚СЊ РІСЃРµ РґРѕРєСѓРјРµРЅС‚С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
     /// </summary>
     [HttpGet("documents/{userId}")]
     public async Task<IActionResult> GetDocuments(string userId)
@@ -76,7 +77,7 @@ public class MinioController : BaseController
     }
 
     /// <summary>
-    /// Получить документ по ID
+    /// РџРѕР»СѓС‡РёС‚СЊ РґРѕРєСѓРјРµРЅС‚ РїРѕ ID
     /// </summary>
     [HttpGet("documents/detail/{documentId}")]
     public async Task<IActionResult> GetDocument(int documentId)
@@ -91,7 +92,7 @@ public class MinioController : BaseController
     }
 
     /// <summary>
-    /// Удалить документ и все его версии
+    /// РЈРґР°Р»РёС‚СЊ РґРѕРєСѓРјРµРЅС‚ Рё РІСЃРµ РµРіРѕ РІРµСЂСЃРёРё
     /// </summary>
     [HttpDelete("documents/{documentId}")]
     public async Task<IActionResult> DeleteDocument(int documentId)
@@ -99,16 +100,16 @@ public class MinioController : BaseController
         return await ExecuteSafeAsync(async () =>
         {
             await _minioService.DeleteDocumentAsync(documentId);
-            return Ok($"Document {documentId} and all its versions deleted");
+            return Ok(true);
         });
     }
 
     #endregion
 
-    #region Версии документов
+    #region Р’РµСЂСЃРёРё РґРѕРєСѓРјРµРЅС‚РѕРІ
 
     /// <summary>
-    /// Получить историю всех версий документа
+    /// РџРѕР»СѓС‡РёС‚СЊ РёСЃС‚РѕСЂРёСЋ РІСЃРµС… РІРµСЂСЃРёР№ РґРѕРєСѓРјРµРЅС‚Р°
     /// </summary>
     [HttpGet("documents/{documentId}/versions")]
     public async Task<IActionResult> GetDocumentVersions(int documentId)
@@ -121,7 +122,7 @@ public class MinioController : BaseController
     }
 
     /// <summary>
-    /// Получить информацию о конкретной версии
+    /// РџРѕР»СѓС‡РёС‚СЊ РёРЅС„РѕСЂРјР°С†РёСЋ Рѕ РєРѕРЅРєСЂРµС‚РЅРѕР№ РІРµСЂСЃРёРё
     /// </summary>
     [HttpGet("documents/versions/{versionId}")]
     public async Task<IActionResult> GetDocumentVersion(int versionId)
@@ -136,7 +137,7 @@ public class MinioController : BaseController
     }
 
     /// <summary>
-    /// Создать новую версию существующего документа
+    /// РЎРѕР·РґР°С‚СЊ РЅРѕРІСѓСЋ РІРµСЂСЃРёСЋ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРіРѕ РґРѕРєСѓРјРµРЅС‚Р°
     /// </summary>
     [HttpPost("documents/{documentId}/versions")]
     public async Task<IActionResult> CreateNewVersion(int documentId, IFormFile file)
@@ -149,7 +150,7 @@ public class MinioController : BaseController
     }
 
     /// <summary>
-    /// Удалить конкретную версию документа
+    /// РЈРґР°Р»РёС‚СЊ РєРѕРЅРєСЂРµС‚РЅСѓСЋ РІРµСЂСЃРёСЋ РґРѕРєСѓРјРµРЅС‚Р°
     /// </summary>
     [HttpDelete("documents/versions/{versionId}")]
     public async Task<IActionResult> DeleteDocumentVersion(int versionId)
@@ -157,12 +158,12 @@ public class MinioController : BaseController
         return await ExecuteSafeAsync(async () =>
         {
             await _minioService.DeleteDocumentVersionAsync(versionId);
-            return Ok($"Version {versionId} deleted");
+            return Ok(true);
         });
     }
 
     /// <summary>
-    /// Скачать конкретную версию файла
+    /// РЎРєР°С‡Р°С‚СЊ РєРѕРЅРєСЂРµС‚РЅСѓСЋ РІРµСЂСЃРёСЋ С„Р°Р№Р»Р°
     /// </summary>
     [HttpGet("documents/versions/{versionId}/download")]
     public async Task<IActionResult> DownloadVersion(int versionId)
@@ -173,7 +174,7 @@ public class MinioController : BaseController
             if (version == null)
                 return NotFound($"Version with ID {versionId} not found");
 
-            // Извлекаем bucketName из MinioObjectName (первый сегмент пути)
+            // РР·РІР»РµРєР°РµРј bucketName РёР· MinioObjectName (РїРµСЂРІС‹Р№ СЃРµРіРјРµРЅС‚ РїСѓС‚Рё)
             var parts = version.MinioObjectName.Split('/');
             var bucketName = parts[0];
 
@@ -184,7 +185,7 @@ public class MinioController : BaseController
 
     #endregion
 
-    #region Низкоуровневые операции с файлами
+    #region РќРёР·РєРѕСѓСЂРѕРІРЅРµРІС‹Рµ РѕРїРµСЂР°С†РёРё СЃ С„Р°Р№Р»Р°РјРё
 
     [HttpPost("get-file")]
     public async Task<IActionResult> GetFile(string bucketName, string objectName)
@@ -208,7 +209,7 @@ public class MinioController : BaseController
 
     #endregion
 
-    #region Парсинг содержимого файлов
+    #region РџР°СЂСЃРёРЅРі СЃРѕРґРµСЂР¶РёРјРѕРіРѕ С„Р°Р№Р»РѕРІ
 
     [HttpPost("get-excel-content")]
     public async Task<IActionResult> GetExcelFileContentAsJson(string bucketName, string objectName)

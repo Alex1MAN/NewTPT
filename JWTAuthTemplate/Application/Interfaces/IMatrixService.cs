@@ -2,6 +2,6 @@
 {
     public interface IMatrixService
     {
-
+        double[][] Transpose(double[][] matrix);
     }
 }

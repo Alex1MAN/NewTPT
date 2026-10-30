@@ -75,7 +75,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers
             var success = await _roleService.AssignRoleToUserAsync(user, roleName);
             if (success)
             {
-                return Ok("Role successfully assigned to user.");
+                return Ok(true);
             }
             return BadRequest($"Error in assigning role '{roleName}'.");
         }
@@ -104,7 +104,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers
             var success = await _roleService.RemoveRoleFromUserAsync(user, roleName);
             if (success)
             {
-                return Ok("Role successfully deleted.");
+                return Ok(true);
             }
             return BadRequest($"Error in deleting role '{roleName}'.");
         }

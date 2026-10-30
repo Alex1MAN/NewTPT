@@ -3,17 +3,17 @@ namespace JWTAuthTemplate.Shared.Dtos;
 public class UploadResultDTO
 {
     /// <summary>
-    /// Количество успешно обработанных файлов
+    /// РљРѕР»РёС‡РµСЃС‚РІРѕ СѓСЃРїРµС€РЅРѕ РѕР±СЂР°Р±РѕС‚Р°РЅРЅС‹С… С„Р°Р№Р»РѕРІ
     /// </summary>
     public int Count { get; set; }
 
     /// <summary>
-    /// Имя бакета (обычно это userId)
+    /// РРјСЏ Р±Р°РєРµС‚Р° (РѕР±С‹С‡РЅРѕ СЌС‚Рѕ userId)
     /// </summary>
     public string BucketName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Список загруженных документов
+    /// РЎРїРёСЃРѕРє Р·Р°РіСЂСѓР¶РµРЅРЅС‹С… РґРѕРєСѓРјРµРЅС‚РѕРІ
     /// </summary>
     public List<FileReferenceDTO> References { get; set; } = new();
 }

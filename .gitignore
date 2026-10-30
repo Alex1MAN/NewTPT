@@ -365,3 +365,7 @@ FodyWeavers.xsd
 
 # Giga code files
 *.txt
+!DELETED_FILES.txt
+
+# Local publish output and CI container binaries
+/artifacts/

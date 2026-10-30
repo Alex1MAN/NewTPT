@@ -22,6 +22,49 @@ namespace JWTAuthTemplate.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ChunkUploadSession", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("BucketName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Completed")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("DocumentId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ETag")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ObjectName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("TotalChunks")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UploadId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("ChunkUploadSessions");
+                });
+
             modelBuilder.Entity("JWTAuthTemplate.Application.Models.Document", b =>
                 {
                     b.Property<int>("Id")
@@ -102,6 +145,26 @@ namespace JWTAuthTemplate.Migrations
                         .IsUnique();
 
                     b.ToTable("DocumentVersions");
+                });
+
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.UploadPart", b =>
+                {
+                    b.Property<string>("SessionKey")
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("ChunkIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Length")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("SessionKey", "ChunkIndex");
+
+                    b.ToTable("UploadParts");
                 });
 
             modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationRole", b =>
@@ -395,6 +458,15 @@ namespace JWTAuthTemplate.Migrations
                     b.Navigation("Document");
                 });
 
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.UploadPart", b =>
+                {
+                    b.HasOne("JWTAuthTemplate.Application.Models.ChunkUploadSession", null)
+                        .WithMany("Parts")
+                        .HasForeignKey("SessionKey")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationRoleClaim", b =>
                 {
                     b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationRole", null)
@@ -448,6 +520,11 @@ namespace JWTAuthTemplate.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ChunkUploadSession", b =>
+                {
+                    b.Navigation("Parts");
                 });
 
             modelBuilder.Entity("JWTAuthTemplate.Application.Models.Document", b =>

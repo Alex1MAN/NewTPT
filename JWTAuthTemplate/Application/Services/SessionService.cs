@@ -12,10 +12,12 @@ namespace JWTAuthTemplate.Application.Services
     public class SessionService: ISessionService
     {
         private readonly Context _context;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public SessionService(Context context)
+        public SessionService(Context context, IHttpContextAccessor httpContextAccessor)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
+            _httpContextAccessor = httpContextAccessor;
         }
 
 
@@ -24,8 +26,7 @@ namespace JWTAuthTemplate.Application.Services
             if (statusParams == null || !statusParams.Any())
                 throw new ArgumentException("Status parameters cannot be empty", nameof(statusParams));
 
-            var httpContextAccessor = new HttpContextAccessor();
-            var userId = httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             try
             {
@@ -33,7 +34,9 @@ namespace JWTAuthTemplate.Application.Services
                 {
                     UserId = userId,
                     ActualAt = DateTime.UtcNow,
-                    StatusParamsDict = statusParams
+                    StatusParamsDict = statusParams,
+                    FileName = statusParams.GetValueOrDefault("fileName")?.ToString() ?? "",
+                    FileExtension = statusParams.GetValueOrDefault("fileExtension")?.ToString() ?? ""
                 };
 
                 _context.UserSessionStatuses.Add(record);
@@ -50,8 +53,7 @@ namespace JWTAuthTemplate.Application.Services
 
         public async Task<UserSessionStatusDTO?> GetLatestUserSessionStatusAsync()
         {
-            var httpContextAccessor = new HttpContextAccessor();
-            var userId = httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             return await _context.UserSessionStatuses
                 .Where(u => u.UserId == userId)
@@ -75,8 +77,7 @@ namespace JWTAuthTemplate.Application.Services
             if (string.IsNullOrWhiteSpace(fileExtension))
                 throw new ArgumentException("File extension cannot be null or whitespace", nameof(fileExtension));
 
-            var httpContextAccessor = new HttpContextAccessor();
-            var userId = httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             var statuses = await _context.UserSessionStatuses
                 .Where(u => u.UserId == userId)
@@ -108,8 +109,7 @@ u.StatusParamsDict.TryGetValue("fileExtension", out var fileExtensionValue) &&
             if (string.IsNullOrWhiteSpace(fileExtension))
                 throw new ArgumentException("File extension cannot be null or whitespace", nameof(fileExtension));
 
-            var httpContextAccessor = new HttpContextAccessor();
-            var userId = httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             var allStatuses = await _context.UserSessionStatuses
                 .Where(u => u.UserId == userId)
@@ -143,8 +143,7 @@ u.StatusParamsDict.TryGetValue("fileExtension", out var fileExtensionValue) &&
             if (string.IsNullOrWhiteSpace(fileExtension))
                 throw new ArgumentException("File extension cannot be null or whitespace", nameof(fileExtension));
 
-            var httpContextAccessor = new HttpContextAccessor();
-            var userId = httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var userId = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             var allStatuses = await _context.UserSessionStatuses
                 .Where(u => u.UserId == userId)

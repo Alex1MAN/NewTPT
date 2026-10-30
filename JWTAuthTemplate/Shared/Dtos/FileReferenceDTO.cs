@@ -2,33 +2,35 @@ namespace JWTAuthTemplate.Shared.Dtos;
 
 public class FileReferenceDTO
 {
+    public string FileReferenceMinio { get; set; } = string.Empty;
+    public string MinioObjectName { get; set; } = string.Empty;
     /// <summary>
-    /// ID документа (логического файла)
+    /// ID РґРѕРєСѓРјРµРЅС‚Р° (Р»РѕРіРёС‡РµСЃРєРѕРіРѕ С„Р°Р№Р»Р°)
     /// </summary>
     public int DocumentId { get; set; }
 
     /// <summary>
-    /// Оригинальное имя файла (например, "report.xlsx")
+    /// РћСЂРёРіРёРЅР°Р»СЊРЅРѕРµ РёРјСЏ С„Р°Р№Р»Р° (РЅР°РїСЂРёРјРµСЂ, "report.xlsx")
     /// </summary>
     public string FileName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Расширение файла без точки (например, "xlsx", "spc")
+    /// Р Р°СЃС€РёСЂРµРЅРёРµ С„Р°Р№Р»Р° Р±РµР· С‚РѕС‡РєРё (РЅР°РїСЂРёРјРµСЂ, "xlsx", "spc")
     /// </summary>
     public string FileExtension { get; set; } = string.Empty;
 
     /// <summary>
-    /// Номер текущей активной версии
+    /// РќРѕРјРµСЂ С‚РµРєСѓС‰РµР№ Р°РєС‚РёРІРЅРѕР№ РІРµСЂСЃРёРё
     /// </summary>
     public int CurrentVersionNumber { get; set; }
 
     /// <summary>
-    /// Дата создания документа
+    /// Р”Р°С‚Р° СЃРѕР·РґР°РЅРёСЏ РґРѕРєСѓРјРµРЅС‚Р°
     /// </summary>
     public DateTime CreatedAt { get; set; }
 
     /// <summary>
-    /// Дата последнего обновления (загрузки новой версии)
+    /// Р”Р°С‚Р° РїРѕСЃР»РµРґРЅРµРіРѕ РѕР±РЅРѕРІР»РµРЅРёСЏ (Р·Р°РіСЂСѓР·РєРё РЅРѕРІРѕР№ РІРµСЂСЃРёРё)
     /// </summary>
     public DateTime UpdatedAt { get; set; }
 }

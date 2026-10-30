@@ -96,6 +96,7 @@ namespace JWTAuthTemplate.Application.Services
 
             // Обновление информации о пользователе с новым refresh токеном (если требуется)
             user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
             await _userManager.UpdateAsync(user);
             return new AuthResultDTO
             {
@@ -118,6 +119,7 @@ namespace JWTAuthTemplate.Application.Services
             {
                 Id = x.Id,
                 Username = x.UserName,
+                Email = x.Email,
                 CreateDate = x.CreateDate,
                 Roles = new List<UserRoleDTO>(x.Roles.Select(r => new UserRoleDTO()
                 {

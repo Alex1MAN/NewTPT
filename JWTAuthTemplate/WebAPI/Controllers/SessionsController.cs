@@ -6,6 +6,7 @@ using JWTAuthTemplate.Shared.Dtos;
 namespace JWTAuthTemplate.WebAPI.Controllers
 {
     [ApiController]
+    [Microsoft.AspNetCore.Authorization.Authorize]
     [Route("sessions")]
     public class SessionsController : BaseController
     {
@@ -45,7 +46,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers
             try
             {
                 var status = await _sessionService.GetLatestUserSessionStatusAsync();
-                return status is not null ? Ok(status) : NotFound("No session status found for current user");
+                return status is not null ? Ok(status) : Ok(null);
             }
             catch (ArgumentException ex)
             {

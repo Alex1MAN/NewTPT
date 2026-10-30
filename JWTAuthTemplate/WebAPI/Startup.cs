@@ -10,6 +10,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using JWTAuthTemplate.DTO.Identity;
+using JWTAuthTemplate.Infrastructure.Storage;
+using JWTAuthTemplate.Infrastructure.Analysis;
+using JWTAuthTemplate.WebAPI.Filters;
+using Minio;
 // using JWTAuthTemplate.Extensions;
 
 namespace JWTAuthTemplate.WebAPI
@@ -35,7 +39,7 @@ namespace JWTAuthTemplate.WebAPI
             builder.Services.Configure<MinioSettingsDTO>(builder.Configuration.GetSection("MinioSettings"));
             //builder.Services.AddSingleton<MinioService>();
 
-            builder.Services.AddControllers();
+            builder.Services.AddControllers(options => options.Filters.Add<SuccessResponseFilter>());
             builder.Services.AddEndpointsApiExplorer();
 
             builder.Configuration["JWT:Secret"] = Environment.GetEnvironmentVariable("JWT_SECRET") ?? builder.Configuration["JWT:Secret"];
@@ -70,11 +74,6 @@ namespace JWTAuthTemplate.WebAPI
             {
                 options.UseNpgsql(connectionString);
             });
-            using (var context = new Context(new DbContextOptionsBuilder<Context>()
-                       .UseNpgsql(connectionString).Options))
-            {
-                context.Database.Migrate();
-            }
 
             //Add identity
             builder.Services.AddIdentity<ApplicationUser, ApplicationRole>()
@@ -121,6 +120,24 @@ namespace JWTAuthTemplate.WebAPI
             builder.Services.AddScoped<IRoleService, RoleService>();
             builder.Services.AddScoped<ISessionService, SessionService>();
             builder.Services.AddScoped<IMinioService, MinioService>();
+            builder.Services.AddSingleton<IMinioClient>(sp =>
+            {
+                var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MinioSettingsDTO>>().Value;
+                return new MinioClient().WithEndpoint(settings.Endpoint)
+                    .WithCredentials(settings.AccessKey, settings.SecretKey).Build();
+            });
+            builder.Services.AddScoped<IObjectStorage, MinioObjectStorage>();
+            builder.Services.AddScoped<IUploadRepository, UploadRepository>();
+            builder.Services.AddScoped<IChunkUploadService, ChunkUploadService>();
+            builder.Services.AddScoped<IReferencesRepository, ReferencesRepository>();
+            builder.Services.AddScoped<IFileContentService, FileContentService>();
+            builder.Services.AddScoped<ILegacyUserRepository, LegacyUserRepository>();
+            builder.Services.AddScoped<ILegacyUserService, LegacyUserService>();
+            builder.Services.AddScoped<IMatrixService, TestMatrixService>();
+            builder.Services.AddScoped<IPreprocessService, PreprocessService>();
+            builder.Services.AddScoped<IAnalysisService, AnalysisService>();
+            builder.Services.AddScoped<IAnalysisAlgorithm, PcaAnalysisAlgorithm>();
+            builder.Services.AddScoped<IAnalysisDataReader, ExcelAnalysisDataReader>();
 
 
             if (builder.Environment.IsDevelopment())
@@ -166,6 +183,11 @@ namespace JWTAuthTemplate.WebAPI
             }
 
             var app = builder.Build();
+            if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
+            {
+                using var scope = app.Services.CreateScope();
+                DatabaseMigrationRunner.Migrate(scope.ServiceProvider.GetRequiredService<Context>());
+            }
 
             app.UseCors("AllowAll");
             // Configure the HTTP request pipeline.

@@ -4,58 +4,61 @@ namespace JWTAuthTemplate.Application.Interfaces;
 
 public interface IMinioService
 {
-    // === Работа с бакетами ===
+    // === Р Р°Р±РѕС‚Р° СЃ Р±Р°РєРµС‚Р°РјРё ===
     Task CreateBucketAsync(string bucketName);
 
-    // === Работа с файлами в MinIO ===
+    // === Р Р°Р±РѕС‚Р° СЃ С„Р°Р№Р»Р°РјРё РІ MinIO ===
     Task<string> GetObjectETagAsync(string bucketName, string objectName);
     Task<Stream> GetFileAsync(string bucketName, string objectName);
+    Task<Stream> GetFileAsync(string bucketName, string objectName, long maxBytes);
     Task UploadFileAsync(string bucketName, string fileName, Stream dataStream, long length);
+    Task UploadFileAsync(string bucketName, string objectName, string filePath);
+    Task UploadFileAsync2(string bucketName, string objectName, Stream fileStream, long fileSize);
     Task<string> GetFileUrlAsync(string bucketName, string objectName);
 
-    // === Работа с документами и версиями ===
+    // === Р Р°Р±РѕС‚Р° СЃ РґРѕРєСѓРјРµРЅС‚Р°РјРё Рё РІРµСЂСЃРёСЏРјРё ===
 
     /// <summary>
-    /// Загрузить файлы и создать для каждого документ с первой версией
+    /// Р—Р°РіСЂСѓР·РёС‚СЊ С„Р°Р№Р»С‹ Рё СЃРѕР·РґР°С‚СЊ РґР»СЏ РєР°Р¶РґРѕРіРѕ РґРѕРєСѓРјРµРЅС‚ СЃ РїРµСЂРІРѕР№ РІРµСЂСЃРёРµР№
     /// </summary>
     Task<UploadResultDTO> UploadFilesAsync(string bucketName, List<IFormFile> filesData);
 
     /// <summary>
-    /// Получить все документы пользователя
+    /// РџРѕР»СѓС‡РёС‚СЊ РІСЃРµ РґРѕРєСѓРјРµРЅС‚С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
     /// </summary>
     Task<List<FileReferenceDTO>> GetDocumentsByUserIdAsync(string userId);
 
     /// <summary>
-    /// Получить документ по ID
+    /// РџРѕР»СѓС‡РёС‚СЊ РґРѕРєСѓРјРµРЅС‚ РїРѕ ID
     /// </summary>
     Task<FileReferenceDTO?> GetDocumentByIdAsync(int documentId);
 
     /// <summary>
-    /// Получить все версии документа
+    /// РџРѕР»СѓС‡РёС‚СЊ РІСЃРµ РІРµСЂСЃРёРё РґРѕРєСѓРјРµРЅС‚Р°
     /// </summary>
     Task<List<DocumentVersionDTO>> GetDocumentVersionsAsync(int documentId);
 
     /// <summary>
-    /// Получить версию по ID
+    /// РџРѕР»СѓС‡РёС‚СЊ РІРµСЂСЃРёСЋ РїРѕ ID
     /// </summary>
     Task<DocumentVersionDTO?> GetDocumentVersionByIdAsync(int versionId);
 
     /// <summary>
-    /// Создать новую версию существующего документа
+    /// РЎРѕР·РґР°С‚СЊ РЅРѕРІСѓСЋ РІРµСЂСЃРёСЋ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРіРѕ РґРѕРєСѓРјРµРЅС‚Р°
     /// </summary>
     Task<DocumentVersionDTO> CreateNewVersionAsync(int documentId, IFormFile file);
 
     /// <summary>
-    /// Удалить документ и все его версии (из БД и из MinIO)
+    /// РЈРґР°Р»РёС‚СЊ РґРѕРєСѓРјРµРЅС‚ Рё РІСЃРµ РµРіРѕ РІРµСЂСЃРёРё (РёР· Р‘Р” Рё РёР· MinIO)
     /// </summary>
     Task DeleteDocumentAsync(int documentId);
 
     /// <summary>
-    /// Удалить конкретную версию документа (из БД и из MinIO)
+    /// РЈРґР°Р»РёС‚СЊ РєРѕРЅРєСЂРµС‚РЅСѓСЋ РІРµСЂСЃРёСЋ РґРѕРєСѓРјРµРЅС‚Р° (РёР· Р‘Р” Рё РёР· MinIO)
     /// </summary>
     Task DeleteDocumentVersionAsync(int versionId);
 
-    // === Парсинг содержимого файлов ===
+    // === РџР°СЂСЃРёРЅРі СЃРѕРґРµСЂР¶РёРјРѕРіРѕ С„Р°Р№Р»РѕРІ ===
     Task<string> GetExcelFileContentAsJson(string bucketName, string objectName);
     Task<string> GetExcelFileContentAsJsonWithLimits(string bucketName, string objectName, double inputX1, double inputX2, double inputY1, double inputY2);
     Task<string> GetSPCFileContentAsJson(string bucketName, string objectName);

@@ -1,0 +1,361 @@
+-- Однократное согласование существующей БД master с develop.
+-- Остановите ВСЕ экземпляры API. Сначала сделайте и проверьте резервную копию.
+-- Пояс Europe/Samara подтверждён пользователем; настройки с сентября не менялись.
+-- Значение уже задано: дополнительная замена часового пояса не требуется.
+-- Запускать весь файл целиком в pgAdmin Query Tool на нужной БД.
+BEGIN;
+SET LOCAL lock_timeout = '10s';
+SET LOCAL statement_timeout = '120s';
+SET LOCAL search_path = public, pg_catalog;
+SELECT pg_advisory_xact_lock(7301924071841001);
+SELECT set_config('newtpt.legacy_timestamp_zone', 'Europe/Samara', true);
+
+DO $guard$
+DECLARE
+    zone_name text := current_setting('newtpt.legacy_timestamp_zone');
+    ids text[];
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = zone_name) THEN
+        RAISE EXCEPTION 'Некорректный пояс записи старых дат: %', zone_name;
+    END IF;
+    IF to_regclass('public."__EFMigrationsHistory"') IS NULL THEN
+        RAISE EXCEPTION 'Нет public.__EFMigrationsHistory. Это не подтверждённая legacy-база.';
+    END IF;
+    SELECT array_agg("MigrationId" ORDER BY "MigrationId") INTO ids
+    FROM public."__EFMigrationsHistory"
+    WHERE "MigrationId" NOT IN ('20261023213643_Init', '20261030151648_ChunkUploads');
+    IF ids IS DISTINCT FROM ARRAY[
+        '20250719070930_Init', '20250725153627_Act1', '20260925183255_AddDocumentVersioning'
+    ]::text[] THEN
+        RAISE EXCEPTION 'Неожиданная история миграций: %. Изменения отменены.', ids;
+    END IF;
+    IF to_regclass('public."AspNetUsers"') IS NULL OR
+       to_regclass('public."Documents"') IS NULL OR
+       to_regclass('public."DocumentVersions"') IS NULL OR
+       to_regclass('public."UserSessionStatuses"') IS NULL THEN
+        RAISE EXCEPTION 'Отсутствуют обязательные legacy-таблицы. Изменения отменены.';
+    END IF;
+END
+$guard$;
+
+-- Блокируем изменение исходных записей до commit, чтобы backfill был согласован.
+LOCK TABLE public."__EFMigrationsHistory", public."AspNetUsers", public."AspNetRoles",
+    public."AspNetRoleClaims", public."AspNetUserClaims", public."AspNetUserLogins",
+    public."AspNetUserRoles", public."AspNetUserTokens", public."Documents",
+    public."DocumentVersions", public."UserSessionStatuses" IN ACCESS EXCLUSIVE MODE;
+
+DO $repair$
+DECLARE
+    item record;
+    column_type text;
+    refs_created boolean := false;
+BEGIN
+    -- Не меняем значения старых календарных дат без явного пояса.
+    -- AT TIME ZONE делает преобразование независимым от TimeZone подключения.
+    FOR item IN SELECT * FROM (VALUES
+        ('Documents', 'CreatedAt'), ('Documents', 'UpdatedAt'),
+        ('DocumentVersions', 'CreatedAt')
+    ) AS x(table_name, column_name)
+    LOOP
+        SELECT format_type(a.atttypid, a.atttypmod) INTO column_type
+        FROM pg_attribute a
+        WHERE a.attrelid = format('public.%I', item.table_name)::regclass
+          AND a.attname = item.column_name AND NOT a.attisdropped;
+        IF column_type = 'timestamp without time zone' THEN
+            EXECUTE format(
+                'ALTER TABLE public.%I ALTER COLUMN %I TYPE timestamp with time zone USING %I AT TIME ZONE %L',
+                item.table_name, item.column_name, item.column_name,
+                current_setting('newtpt.legacy_timestamp_zone'));
+        ELSIF column_type IS DISTINCT FROM 'timestamp with time zone' THEN
+            RAISE EXCEPTION 'Неожиданный тип %.%: %', item.table_name, item.column_name, column_type;
+        END IF;
+    END LOOP;
+
+    -- Старый StatusParams сохраняется без изменения. Новые поля выводим из JSON.
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+        AND table_name='UserSessionStatuses' AND column_name='FileName') THEN
+        ALTER TABLE public."UserSessionStatuses" ADD COLUMN "FileName" text;
+        UPDATE public."UserSessionStatuses"
+        SET "FileName" = COALESCE("StatusParams" ->> 'fileName', "StatusParams" ->> 'FileName', '');
+        ALTER TABLE public."UserSessionStatuses" ALTER COLUMN "FileName" SET NOT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+        AND table_name='UserSessionStatuses' AND column_name='FileExtension') THEN
+        ALTER TABLE public."UserSessionStatuses" ADD COLUMN "FileExtension" text;
+        UPDATE public."UserSessionStatuses"
+        SET "FileExtension" = COALESCE("StatusParams" ->> 'fileExtension', "StatusParams" ->> 'FileExtension', '');
+        ALTER TABLE public."UserSessionStatuses" ALTER COLUMN "FileExtension" SET NOT NULL;
+    END IF;
+
+    -- AddDocumentVersioning удаляла legacy-ссылки, но develop снова использует их.
+    -- Восстанавливаем по одной ссылке на каждую версию, не копируя файлы MinIO.
+    IF to_regclass('public."UserReferencesInMinio"') IS NULL THEN
+        CREATE TABLE public."UserReferencesInMinio" (
+            "Id" integer GENERATED BY DEFAULT AS IDENTITY,
+            "UserId" text, "FileName" text, "FileExtension" text, "FileReferenceMinio" text,
+            CONSTRAINT "PK_UserReferencesInMinio" PRIMARY KEY ("Id")
+        );
+        refs_created := true;
+    END IF;
+    LOCK TABLE public."UserReferencesInMinio" IN ACCESS EXCLUSIVE MODE;
+    IF refs_created THEN
+        INSERT INTO public."UserReferencesInMinio" ("UserId","FileName","FileExtension","FileReferenceMinio")
+        SELECT d."UserId", v."OriginalFileName", d."FileExtension", v."ETag"
+        FROM public."DocumentVersions" v
+        JOIN public."Documents" d ON d."Id" = v."DocumentId"
+        ORDER BY v."Id";
+    END IF;
+
+    -- Присланная legacy-миграция не создавала связь CurrentVersionId.
+    -- Сначала проверяем принадлежность версий, затем добавляем ограничение.
+    IF EXISTS (
+        SELECT 1 FROM public."Documents" d
+        LEFT JOIN public."DocumentVersions" v ON v."Id"=d."CurrentVersionId"
+        WHERE d."CurrentVersionId" IS NOT NULL AND (v."Id" IS NULL OR v."DocumentId"<>d."Id")
+    ) THEN
+        RAISE EXCEPTION 'Обнаружена неверная CurrentVersionId. Автоматически данные не исправляются.';
+    END IF;
+    CREATE INDEX IF NOT EXISTS "IX_Documents_CurrentVersionId"
+        ON public."Documents" ("CurrentVersionId");
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public."Documents"'::regclass
+        AND conname='FK_Documents_DocumentVersions_CurrentVersionId') THEN
+        ALTER TABLE public."Documents" ADD CONSTRAINT "FK_Documents_DocumentVersions_CurrentVersionId"
+        FOREIGN KEY ("CurrentVersionId") REFERENCES public."DocumentVersions" ("Id") ON DELETE SET NULL;
+    END IF;
+END
+$repair$;
+
+-- Строим эталон непосредственно из SQL исходной develop Init.
+-- Схема создаётся только внутри этой транзакции. Чужую существующую не удаляем.
+CREATE SCHEMA newtpt_expected_baseline;
+SET LOCAL search_path = newtpt_expected_baseline, pg_catalog;
+-- BEGIN EF GENERATED BASELINE
+CREATE TABLE "AspNetRoles" (
+    "Id" text NOT NULL,
+    "Name" character varying(256) NULL,
+    "NormalizedName" character varying(256) NULL,
+    "ConcurrencyStamp" text NULL,
+    CONSTRAINT "PK_AspNetRoles" PRIMARY KEY ("Id")
+);
+
+CREATE TABLE "AspNetUsers" (
+    "Id" text NOT NULL,
+    "CreateDate" timestamp with time zone NOT NULL,
+    "RefreshToken" text NULL,
+    "RefreshTokenExpiryTime" timestamp with time zone NOT NULL,
+    "UserName" character varying(256) NULL,
+    "NormalizedUserName" character varying(256) NULL,
+    "Email" character varying(256) NULL,
+    "NormalizedEmail" character varying(256) NULL,
+    "EmailConfirmed" boolean NOT NULL,
+    "PasswordHash" text NULL,
+    "SecurityStamp" text NULL,
+    "ConcurrencyStamp" text NULL,
+    "PhoneNumber" text NULL,
+    "PhoneNumberConfirmed" boolean NOT NULL,
+    "TwoFactorEnabled" boolean NOT NULL,
+    "LockoutEnd" timestamp with time zone NULL,
+    "LockoutEnabled" boolean NOT NULL,
+    "AccessFailedCount" integer NOT NULL,
+    CONSTRAINT "PK_AspNetUsers" PRIMARY KEY ("Id")
+);
+
+CREATE TABLE "UserReferencesInMinio" (
+    "Id" integer GENERATED BY DEFAULT AS IDENTITY,
+    "UserId" text NULL,
+    "FileName" text NULL,
+    "FileExtension" text NULL,
+    "FileReferenceMinio" text NULL,
+    CONSTRAINT "PK_UserReferencesInMinio" PRIMARY KEY ("Id")
+);
+
+CREATE TABLE "UserSessionStatuses" (
+    "Id" integer GENERATED BY DEFAULT AS IDENTITY,
+    "UserId" text NOT NULL,
+    "ActualAt" timestamp with time zone NOT NULL,
+    "StatusParams" jsonb NOT NULL,
+    "FileExtension" text NOT NULL,
+    "FileName" text NOT NULL,
+    CONSTRAINT "PK_UserSessionStatuses" PRIMARY KEY ("Id")
+);
+
+CREATE TABLE "AspNetRoleClaims" (
+    "Id" integer GENERATED BY DEFAULT AS IDENTITY,
+    "RoleId" text NOT NULL,
+    "ClaimType" text NULL,
+    "ClaimValue" text NULL,
+    CONSTRAINT "PK_AspNetRoleClaims" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_AspNetRoleClaims_AspNetRoles_RoleId" FOREIGN KEY ("RoleId") REFERENCES "AspNetRoles" ("Id") ON DELETE CASCADE
+);
+
+CREATE TABLE "AspNetUserClaims" (
+    "Id" integer GENERATED BY DEFAULT AS IDENTITY,
+    "UserId" text NOT NULL,
+    "ClaimType" text NULL,
+    "ClaimValue" text NULL,
+    CONSTRAINT "PK_AspNetUserClaims" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_AspNetUserClaims_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+);
+
+CREATE TABLE "AspNetUserLogins" (
+    "LoginProvider" text NOT NULL,
+    "ProviderKey" text NOT NULL,
+    "ProviderDisplayName" text NULL,
+    "UserId" text NOT NULL,
+    CONSTRAINT "PK_AspNetUserLogins" PRIMARY KEY ("LoginProvider", "ProviderKey"),
+    CONSTRAINT "FK_AspNetUserLogins_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+);
+
+CREATE TABLE "AspNetUserRoles" (
+    "UserId" text NOT NULL,
+    "RoleId" text NOT NULL,
+    CONSTRAINT "PK_AspNetUserRoles" PRIMARY KEY ("UserId", "RoleId"),
+    CONSTRAINT "FK_AspNetUserRoles_AspNetRoles_RoleId" FOREIGN KEY ("RoleId") REFERENCES "AspNetRoles" ("Id") ON DELETE CASCADE,
+    CONSTRAINT "FK_AspNetUserRoles_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+);
+
+CREATE TABLE "AspNetUserTokens" (
+    "UserId" text NOT NULL,
+    "LoginProvider" text NOT NULL,
+    "Name" text NOT NULL,
+    "Value" text NULL,
+    CONSTRAINT "PK_AspNetUserTokens" PRIMARY KEY ("UserId", "LoginProvider", "Name"),
+    CONSTRAINT "FK_AspNetUserTokens_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+);
+
+CREATE TABLE "Documents" (
+    "Id" integer GENERATED BY DEFAULT AS IDENTITY,
+    "UserId" text NOT NULL,
+    "OriginalName" text NOT NULL,
+    "FileExtension" text NOT NULL,
+    "CurrentVersionId" integer NULL,
+    "CreatedAt" timestamp with time zone NOT NULL,
+    "UpdatedAt" timestamp with time zone NOT NULL,
+    CONSTRAINT "PK_Documents" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_Documents_AspNetUsers_UserId" FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
+);
+
+CREATE TABLE "DocumentVersions" (
+    "Id" integer GENERATED BY DEFAULT AS IDENTITY,
+    "DocumentId" integer NOT NULL,
+    "VersionNumber" integer NOT NULL,
+    "MinioObjectName" text NOT NULL,
+    "ETag" text NOT NULL,
+    "FileSize" bigint NOT NULL,
+    "OriginalFileName" text NOT NULL,
+    "CreatedAt" timestamp with time zone NOT NULL,
+    CONSTRAINT "PK_DocumentVersions" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_DocumentVersions_Documents_DocumentId" FOREIGN KEY ("DocumentId") REFERENCES "Documents" ("Id") ON DELETE CASCADE
+);
+
+CREATE INDEX "IX_AspNetRoleClaims_RoleId" ON "AspNetRoleClaims" ("RoleId");
+
+CREATE UNIQUE INDEX "RoleNameIndex" ON "AspNetRoles" ("NormalizedName");
+
+CREATE INDEX "IX_AspNetUserClaims_UserId" ON "AspNetUserClaims" ("UserId");
+
+CREATE INDEX "IX_AspNetUserLogins_UserId" ON "AspNetUserLogins" ("UserId");
+
+CREATE INDEX "IX_AspNetUserRoles_RoleId" ON "AspNetUserRoles" ("RoleId");
+
+CREATE INDEX "EmailIndex" ON "AspNetUsers" ("NormalizedEmail");
+
+CREATE UNIQUE INDEX "UserNameIndex" ON "AspNetUsers" ("NormalizedUserName");
+
+CREATE INDEX "IX_Documents_CurrentVersionId" ON "Documents" ("CurrentVersionId");
+
+CREATE INDEX "IX_Documents_OriginalName" ON "Documents" ("OriginalName");
+
+CREATE INDEX "IX_Documents_UserId" ON "Documents" ("UserId");
+
+CREATE UNIQUE INDEX "IX_DocumentVersions_DocumentId_VersionNumber" ON "DocumentVersions" ("DocumentId", "VersionNumber");
+
+CREATE INDEX "IX_DocumentVersions_MinioObjectName" ON "DocumentVersions" ("MinioObjectName");
+
+ALTER TABLE "Documents" ADD CONSTRAINT "FK_Documents_DocumentVersions_CurrentVersionId" FOREIGN KEY ("CurrentVersionId") REFERENCES "DocumentVersions" ("Id") ON DELETE SET NULL;
+
+-- END EF GENERATED BASELINE
+SET LOCAL search_path = public, pg_catalog;
+
+DO $validate$
+DECLARE
+    problems text;
+    expected record;
+    actual_def text;
+BEGIN
+    -- Все столбцы эталона: тип, nullable, identity. Лишние legacy-таблицы допустимы.
+    SELECT string_agg(format('%I.%I: ожидается %s / NOT NULL=%s / identity=%s',
+        e.table_name,e.column_name,e.type_name,e.not_null,e.identity_kind), E'\n')
+    INTO problems
+    FROM (
+        SELECT c.relname AS table_name, a.attname AS column_name,
+               format_type(a.atttypid,a.atttypmod) AS type_name,
+               a.attnotnull AS not_null, a.attidentity AS identity_kind
+        FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+        JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='newtpt_expected_baseline' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped
+    ) e
+    LEFT JOIN (
+        SELECT c.relname AS table_name, a.attname AS column_name,
+               format_type(a.atttypid,a.atttypmod) AS type_name,
+               a.attnotnull AS not_null, a.attidentity AS identity_kind
+        FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+        JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='public' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped
+    ) a USING (table_name,column_name)
+    WHERE a.type_name IS DISTINCT FROM e.type_name OR a.not_null IS DISTINCT FROM e.not_null
+       OR a.identity_kind IS DISTINCT FROM e.identity_kind;
+    IF problems IS NOT NULL THEN
+        RAISE EXCEPTION 'Схема не соответствует develop Init. Транзакция отменена:%', E'\n'||problems;
+    END IF;
+
+    -- PK/FK, включая действия ON DELETE, валидацию и deferrability.
+    FOR expected IN
+        SELECT t.relname AS table_name, c.conname,
+               replace(pg_get_constraintdef(c.oid), 'newtpt_expected_baseline.', '') AS definition
+        FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+        JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname='newtpt_expected_baseline'
+    LOOP
+        SELECT replace(pg_get_constraintdef(c.oid), 'public.', '') INTO actual_def
+        FROM pg_constraint c
+        WHERE c.conrelid=format('public.%I',expected.table_name)::regclass
+          AND c.conname=expected.conname AND c.convalidated;
+        IF actual_def IS DISTINCT FROM expected.definition THEN
+            RAISE EXCEPTION 'Не совпадает ограничение %.%: % вместо %',
+                expected.table_name,expected.conname,actual_def,expected.definition;
+        END IF;
+    END LOOP;
+
+    -- Индексы проверяем по имени и определению, а не только IF NOT EXISTS.
+    FOR expected IN
+        SELECT t.relname AS table_name, i.relname AS index_name,
+               replace(pg_get_indexdef(i.oid), 'newtpt_expected_baseline.', '') AS definition
+        FROM pg_index x JOIN pg_class i ON i.oid=x.indexrelid
+        JOIN pg_class t ON t.oid=x.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname='newtpt_expected_baseline'
+    LOOP
+        SELECT replace(pg_get_indexdef(i.oid), 'public.', '') INTO actual_def
+        FROM pg_index x JOIN pg_class i ON i.oid=x.indexrelid
+        JOIN pg_class t ON t.oid=x.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname='public' AND t.relname=expected.table_name AND i.relname=expected.index_name
+          AND x.indisvalid AND x.indisready;
+        IF actual_def IS DISTINCT FROM expected.definition THEN
+            RAISE EXCEPTION 'Не совпадает индекс %.%: % вместо %',
+                expected.table_name,expected.index_name,actual_def,expected.definition;
+        END IF;
+    END LOOP;
+END
+$validate$;
+
+DROP SCHEMA newtpt_expected_baseline CASCADE;
+
+-- Только после DDL и всех проверок считаем схему соответствующей develop Init.
+-- Три исходные записи истории НЕ удаляются и НЕ переименовываются.
+INSERT INTO public."__EFMigrationsHistory" ("MigrationId","ProductVersion")
+VALUES ('20261023213643_Init','7.0.7')
+ON CONFLICT ("MigrationId") DO NOTHING;
+COMMIT;
+
+-- ChunkUploads будет применена обычным Database.Migrate при следующем запуске.
+SELECT "MigrationId","ProductVersion" FROM public."__EFMigrationsHistory" ORDER BY "MigrationId";
