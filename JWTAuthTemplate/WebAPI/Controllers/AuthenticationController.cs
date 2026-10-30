@@ -1,4 +1,4 @@
-﻿using JWTAuthTemplate.Application.Interfaces;
+using JWTAuthTemplate.Application.Interfaces;
 using JWTAuthTemplate.DTO.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -84,6 +84,7 @@ namespace JWTAuthTemplate.WebAPI.Controllers
         [HttpGet("GetRoles")]
         public Task<IActionResult> GetRoles([FromServices] IRoleService service)
             => ExecuteSafeAsync(async () => Ok(await service.GetAllRolesAsync()));
+
 
 
         [HttpPost("RefreshToken")]
