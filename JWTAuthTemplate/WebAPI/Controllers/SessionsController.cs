@@ -1,122 +1,88 @@
-using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
+using System.Security.Claims;
 using JWTAuthTemplate.Application.Interfaces;
 using JWTAuthTemplate.Shared.Dtos;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
+namespace JWTAuthTemplate.WebAPI.Controllers;
 
-namespace JWTAuthTemplate.WebAPI.Controllers
+/// <summary>Статусы сессий текущего авторизованного пользователя.</summary>
+[ApiController]
+[Authorize]
+[Route("sessions")]
+public sealed class SessionsController : BaseController
 {
-    [ApiController]
-    [Microsoft.AspNetCore.Authorization.Authorize]
-    [Route("sessions")]
-    public class SessionsController : BaseController
+    private readonly ISessionService _sessionService;
+
+    public SessionsController(ISessionService sessionService) => _sessionService = sessionService;
+
+    private string CurrentUserId => User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? throw new ArgumentException("User ID not found in token.");
+
+    [HttpPost("save-status")]
+    public Task<IActionResult> SaveStatus([FromBody] Dictionary<string, object>? statusParams) => ExecuteSafeAsync(async () =>
     {
-        private readonly ISessionService _sessionService;
+        if (statusParams == null)
+            return BadRequest("Request body cannot be empty");
+        var id = await _sessionService.SaveStatusAsync(CurrentUserId, statusParams);
+        return Ok(new { id, message = "Status saved successfully" });
+    });
 
-        public SessionsController(ISessionService sessionService)
+    [HttpGet("latest-status")]
+    public Task<IActionResult> GetLatestStatus()
+        => ExecuteSafeAsync(async () => Ok(Compact(await _sessionService.GetLatestAsync(CurrentUserId))));
+
+    [HttpGet("all-by-file-name")]
+    public Task<IActionResult> GetAllStatusesByFileName([FromQuery] string fileName, [FromQuery] string fileExtension)
+        => ExecuteSafeAsync(async () =>
         {
-            _sessionService = sessionService ?? throw new ArgumentNullException(nameof(sessionService));
-        }
+            if (Missing(fileName, fileExtension) is { } error) return error;
+            var statuses = await _sessionService.GetAllByFileAsync(CurrentUserId, fileName, fileExtension);
+            return statuses.Count > 0
+                ? Ok(statuses.Select(Compact))
+                : NotFound($"No session statuses found for file '{fileName}' with extension '{fileExtension}'");
+        });
 
-
-        [HttpPost("save-status")]
-        public async Task<IActionResult> SaveStatus([FromBody] Dictionary<string, object> statusParams)
+    [HttpGet("latest-by-file-name")]
+    public Task<IActionResult> GetLatestStatusByFileName([FromQuery] string fileName, [FromQuery] string fileExtension)
+        => ExecuteSafeAsync(async () =>
         {
-            if (statusParams == null)
-                return BadRequest("Request body cannot be empty");
+            if (Missing(fileName, fileExtension) is { } error) return error;
+            var status = await _sessionService.GetLatestByFileAsync(CurrentUserId, fileName, fileExtension);
+            return status is not null
+                ? Ok(Compact(status))
+                : NotFound($"No session status found for file '{fileName}' with extension '{fileExtension}'");
+        });
 
-            try
-            {
-                var id = await _sessionService.SaveStatusAsync(statusParams);
-                return Ok(new { id, message = "Status saved successfully" });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(ex.Message);
-            }
-            catch (InvalidOperationException)
-            {
-                return Problem(statusCode: 500, detail: "Failed to save session status");
-            }
-        }
+    /// <summary>Последний статус не позже asOfTime (ISO 8601; без зоны — UTC).</summary>
+    [HttpGet("latest-by-file-name-and-time")]
+    public Task<IActionResult> GetLatestStatusByFileNameAndTime([FromQuery] string fileName, [FromQuery] string fileExtension,
+        [FromQuery] string asOfTime) => ExecuteSafeAsync(async () =>
+    {
+        if (Missing(fileName, fileExtension) is { } error) return error;
+        if (asOfTime is null) return BadRequest("Parameter 'asOfTime' is required");
+        if (!DateTime.TryParse(asOfTime, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var asOfUtc))
+            return BadRequest("Parameter 'asOfTime' must be a valid ISO 8601 datetime string (e.g., 2026-04-03T17:05:00Z or 2026-04-03T17:05:00)");
 
+        var status = await _sessionService.GetLatestByFileAsOfAsync(CurrentUserId, fileName, fileExtension, asOfUtc);
+        return status is not null
+            ? Ok(Compact(status))
+            : NotFound($"No session status found for file '{fileName}' with extension '{fileExtension}' as of {asOfTime}");
+    });
 
-        [HttpGet("latest-status")]
-        public async Task<IActionResult> GetLatestStatus()
-        {
-            try
-            {
-                var status = await _sessionService.GetLatestUserSessionStatusAsync();
-                return status is not null ? Ok(status) : Ok(null);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(ex.Message);
-            }
-        }
+    /// <summary>Новые маршруты не возвращают исходную JSON-строку параметров — только словарь.</summary>
+    private static UserSessionStatusDTO? Compact(UserSessionStatusDTO? status)
+    {
+        if (status is not null) status.StatusParams = null;
+        return status;
+    }
 
-
-        [HttpGet("all-by-file-name")]
-        public async Task<IActionResult> GetAllStatusesByFileName([FromQuery] string fileName, [FromQuery] string fileExtension)
-        {
-            if (string.IsNullOrWhiteSpace(fileName)) return BadRequest("Parameter 'fileName' is required");
-            if (string.IsNullOrWhiteSpace(fileExtension)) return BadRequest("Parameter 'fileExtension' is required");
-
-            try
-            {
-                var statuses = await _sessionService.GetAllStatusesByFileNameAsync(fileName, fileExtension);
-
-                if (!statuses.Any()) return NotFound($"No session statuses found for file '{fileName}' with extension '{fileExtension}'");
-
-                return Ok(statuses);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(ex.Message);
-            }
-        }
-
-
-        [HttpGet("latest-by-file-name")]
-        public async Task<IActionResult> GetLatestStatusByFileName([FromQuery] string fileName, [FromQuery] string fileExtension)
-        {
-            if (string.IsNullOrWhiteSpace(fileName))
-                return BadRequest("Parameter 'fileName' is required");
-            if (string.IsNullOrWhiteSpace(fileExtension))
-                return BadRequest("Parameter 'fileExtension' is required");
-
-            try
-            {
-                var status = await _sessionService.GetLatestStatusByFileNameAsync(fileName, fileExtension);
-                return status is not null ? Ok(status) : NotFound($"No session status found for file '{fileName}' with extension '{fileExtension}'");
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(ex.Message);
-            }
-        }
-
-
-        [HttpGet("latest-by-file-name-and-time")]
-        public async Task<IActionResult> GetLatestStatusByFileNameAndTime(
-            [FromQuery] string fileName,
-            [FromQuery] string fileExtension,
-            [FromQuery] string asOfTime)
-        {
-            if (string.IsNullOrWhiteSpace(fileName)) return BadRequest("Parameter 'fileName' is required");
-            if (string.IsNullOrWhiteSpace(fileExtension)) return BadRequest("Parameter 'fileExtension' is required");
-            if (asOfTime is null) return BadRequest("Parameter 'asOfTime' is required");
-
-            if (!DateTime.TryParse(asOfTime, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var asOfTimeUtc)) return BadRequest("Parameter 'asOfTime' must be a valid ISO 8601 datetime string (e.g., 2026-04-03T17:05:00Z or 2026-04-03T17:05:00)");
-
-            try
-            {
-                var status = await _sessionService.GetLatestStatusByFileNameAndTimeAsync(fileName, fileExtension, asOfTimeUtc);
-                return status is not null ? Ok(status) : NotFound($"No session status found for file '{fileName}' with extension '{fileExtension}' as of {asOfTime}");
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(ex.Message);
-            }
-        }
+    private IActionResult? Missing(string fileName, string fileExtension)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return BadRequest("Parameter 'fileName' is required");
+        if (string.IsNullOrWhiteSpace(fileExtension)) return BadRequest("Parameter 'fileExtension' is required");
+        return null;
     }
 }

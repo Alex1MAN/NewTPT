@@ -1,3 +1,4 @@
+using JWTAuthTemplate.Application.Exceptions;
 using JWTAuthTemplate.Application.Interfaces;
 using JWTAuthTemplate.Application.Models;
 using JWTAuthTemplate.Application.Services;
@@ -5,6 +6,7 @@ using JWTAuthTemplate.Shared.Dtos;
 using Moq;
 using Xunit;
 namespace JWTAuthTemplate.Tests;
+/// <summary>Загрузка по частям: порядок, идемпотентность, конфликты и сбои хранилища.</summary>
 public class ChunkUploadTests
 {
     private readonly Mock<IUploadRepository> _repo = new();
@@ -20,7 +22,7 @@ public class ChunkUploadTests
         _tx.Setup(t => t.UserExists(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         _tx.Setup(t => t.Add(It.IsAny<ChunkUploadSession>())).Callback<ChunkUploadSession>(s => _session = s);
         _tx.Setup(t => t.AddDocument(It.IsAny<ChunkUploadSession>(), It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(42);
-        _storage.Setup(s => s.Put(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+        _storage.Setup(s => s.PutAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
             .Returns(async (string bucket, string name, Stream stream, long length, CancellationToken ct) =>
             {
                 using var memory = new MemoryStream();
@@ -28,9 +30,9 @@ public class ChunkUploadTests
                 Assert.Equal(length, memory.Length);
                 _objects[name] = memory.ToArray();
             });
-        _storage.Setup(s => s.Read(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string bucket, string name, CancellationToken ct) => _objects[name]);
-        _storage.Setup(s => s.ETag(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("etag");
+        _storage.Setup(s => s.ReadAllBytesAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string bucket, string name, long? maxBytes, CancellationToken ct) => _objects[name]);
+        _storage.Setup(s => s.GetETagAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("etag");
         _service = new ChunkUploadService(_repo.Object, _storage.Object);
     }
     private static UploadChunkRequest Request(int index = 0, int count = 2) => new()
@@ -55,19 +57,19 @@ public class ChunkUploadTests
         await Upload(0, new byte[] { 1, 2 });
         await Upload(0, new byte[] { 1, 2 });
         Assert.Single(_session!.Parts);
-        _storage.Verify(s => s.Put(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Once);
+        _storage.Verify(s => s.PutAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Once);
     }
     [Fact]
     public async Task DifferentDuplicateRejected()
     {
         await Upload(0, new byte[] { 1 });
-        await Assert.ThrowsAsync<UploadConflictException>(() => Upload(0, new byte[] { 2 }));
+        await Assert.ThrowsAsync<ConflictException>(() => Upload(0, new byte[] { 2 }));
     }
     [Fact]
     public async Task MissingChunksDoNotFinalizeAndCanBeRetried()
     {
         await Upload(0, new byte[] { 1 });
-        await Assert.ThrowsAsync<UploadConflictException>(() => _service.CompleteUpload(Complete()));
+        await Assert.ThrowsAsync<ConflictException>(() => _service.CompleteUpload(Complete()));
         Assert.False(_session!.Completed);
         await Upload(1, new byte[] { 2 });
         Assert.True((await _service.CompleteUpload(Complete())).Success);
@@ -77,8 +79,8 @@ public class ChunkUploadTests
     {
         await Upload(0, new byte[] { 1 });
         var req = Request(); req.FileName = "other.bin";
-        await Assert.ThrowsAsync<UploadConflictException>(() => _service.UploadChunk(req, new MemoryStream(new byte[] { 1 }), 1));
-        await Assert.ThrowsAsync<UploadConflictException>(() => _service.CompleteUpload(Complete(3)));
+        await Assert.ThrowsAsync<ConflictException>(() => _service.UploadChunk(req, new MemoryStream(new byte[] { 1 }), 1));
+        await Assert.ThrowsAsync<ConflictException>(() => _service.CompleteUpload(Complete(3)));
     }
     [Theory]
     [InlineData(-1, 2)]
@@ -121,7 +123,7 @@ public class ChunkUploadTests
     [Fact]
     public async Task FailedStoragePutDoesNotCommit()
     {
-        _storage.Setup(s => s.Put(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+        _storage.Setup(s => s.PutAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("offline"));
         await Assert.ThrowsAsync<IOException>(() => Upload(0, new byte[] { 1 }));
         _tx.Verify(t => t.Commit(It.IsAny<CancellationToken>()), Times.Never);
@@ -130,7 +132,7 @@ public class ChunkUploadTests
     public async Task CleanupFailureDoesNotLoseCompletedReceipt()
     {
         await Upload(0, new byte[] { 1 }, 1);
-        _storage.Setup(s => s.Delete(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("offline"));
+        _storage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("offline"));
         Assert.True((await _service.CompleteUpload(Complete(1))).Success);
         Assert.True((await _service.CompleteUpload(Complete(1))).Success);
     }

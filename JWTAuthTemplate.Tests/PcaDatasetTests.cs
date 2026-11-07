@@ -1,9 +1,12 @@
 using System.Text.Json;
 using JWTAuthTemplate.Infrastructure.Analysis;
+using JWTAuthTemplate.Application.Interfaces;
+using JWTAuthTemplate.Application.Models;
 using JWTAuthTemplate.Application.Services;
 using JWTAuthTemplate.Shared.Dtos;
 using MathNet.Numerics.LinearAlgebra;
-using TestPCA;
+
+using Moq;
 using Xunit;
 namespace JWTAuthTemplate.Tests;
 public class PcaDatasetTests
@@ -13,9 +16,10 @@ public class PcaDatasetTests
     {
         string root = Path.Combine(AppContext.BaseDirectory, "Fixtures");
         using var expected = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "NiCu100.numpy.json")));
-        using var stream = File.OpenRead(Path.Combine(root, "NiCu100.xlsx"));
-        var result = (PcaResult)new AnalysisService(new[] { new PcaAnalysisAlgorithm() }, new ExcelAnalysisDataReader())
-            .AnalyzeExcel(stream, "PCA", 0.95);
+        string path = Path.Combine(root, "NiCu100.xlsx");
+        var file = new FileUpload("NiCu100.xlsx", new FileInfo(path).Length, () => File.OpenRead(path));
+        var result = (PcaResult)new AnalysisService(new[] { new PcaAnalysisAlgorithm() }, new ExcelAnalysisDataReader(), Mock.Of<IObjectStorage>())
+            .AnalyzeExcel(file, "PCA", 0.95);
         Assert.Equal(expected.RootElement.GetProperty("rowCount").GetInt32(), result.RowCount);
         Assert.Equal(expected.RootElement.GetProperty("columnCount").GetInt32(), result.ComponentsCount);
         var ratios = expected.RootElement.GetProperty("ratios").EnumerateArray().Select(v => v.GetDouble()).ToArray();

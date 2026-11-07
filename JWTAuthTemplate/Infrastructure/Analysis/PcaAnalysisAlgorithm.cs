@@ -1,8 +1,9 @@
 using JWTAuthTemplate.Application.Interfaces;
 using JWTAuthTemplate.Shared.Dtos;
 using MathNet.Numerics.LinearAlgebra;
-using TestPCA;
 namespace JWTAuthTemplate.Infrastructure.Analysis;
+
+/// <summary>Алгоритм анализа главных компонент (PCA).</summary>
 public sealed class PcaAnalysisAlgorithm : IAnalysisAlgorithm
 {
     public string Method => "PCA";
@@ -28,20 +29,5 @@ public sealed class PcaAnalysisAlgorithm : IAnalysisAlgorithm
             ExplainedVarianceRatio = model.ExplainedVarianceRatio, CumulativeVariance = model.CumulativeVariance,
             TransformedData = request.NewData == null ? null : model.Transform(Matrix<double>.Build.DenseOfRowArrays(request.NewData)).ToRowArrays()
         };
-    }
-}
-public sealed class ExcelAnalysisDataReader : IAnalysisDataReader
-{
-    public AnalysisTable LoadDataFromExcel(Stream stream)
-    {
-        try
-        {
-            var raw = new DataProcessor().LoadDataFromExcel(stream);
-            return new AnalysisTable { Data = raw.Data.ToRowArrays(), ColumnNames = raw.ColumnNames };
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException)
-        {
-            throw new ArgumentException("Cannot read numeric Excel data: " + ex.Message, ex);
-        }
     }
 }

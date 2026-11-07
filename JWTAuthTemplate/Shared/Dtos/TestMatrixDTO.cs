@@ -1,7 +1,7 @@
-﻿namespace JWTAuthTemplate.DTO.Identity
+namespace JWTAuthTemplate.Shared.Dtos;
+
+/// <summary>Матрица для транспонирования.</summary>
+public class TestMatrixDTO
 {
-    public class TestMatrixDTO
-    {
-        public required double[][] Data { get; set; }
-    }
+    public required double[][] Data { get; set; }
 }

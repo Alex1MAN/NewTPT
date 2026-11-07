@@ -1,5 +1,6 @@
 namespace JWTAuthTemplate.Shared.Dtos;
 
+/// <summary>Результат сборки файла из частей.</summary>
 public class CompleteUploadResponse
 {
     public int DocumentId { get; set; }

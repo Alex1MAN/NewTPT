@@ -129,7 +129,7 @@ $repair$;
 -- Схема создаётся только внутри этой транзакции. Чужую существующую не удаляем.
 CREATE SCHEMA newtpt_expected_baseline;
 SET LOCAL search_path = newtpt_expected_baseline, pg_catalog;
--- BEGIN EF GENERATED BASELINE
+-- НАЧАЛО: эталонная схема, сгенерированная EF (dotnet ef migrations script)
 CREATE TABLE "AspNetRoles" (
     "Id" text NOT NULL,
     "Name" character varying(256) NULL,
@@ -274,7 +274,7 @@ CREATE INDEX "IX_DocumentVersions_MinioObjectName" ON "DocumentVersions" ("Minio
 
 ALTER TABLE "Documents" ADD CONSTRAINT "FK_Documents_DocumentVersions_CurrentVersionId" FOREIGN KEY ("CurrentVersionId") REFERENCES "DocumentVersions" ("Id") ON DELETE SET NULL;
 
--- END EF GENERATED BASELINE
+-- КОНЕЦ: эталонная схема EF
 SET LOCAL search_path = public, pg_catalog;
 
 DO $validate$

@@ -1,207 +1,94 @@
-
-using System.Text;
+using JWTAuthTemplate.Application;
+using JWTAuthTemplate.Infrastructure;
 using JWTAuthTemplate.Infrastructure.Database;
-using JWTAuthTemplate.Models.Identity;
-using JWTAuthTemplate.Application.Interfaces;
-using JWTAuthTemplate.Application.Services;
+using JWTAuthTemplate.WebAPI.Filters;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using JWTAuthTemplate.DTO.Identity;
-using JWTAuthTemplate.Infrastructure.Storage;
-using JWTAuthTemplate.Infrastructure.Analysis;
-using JWTAuthTemplate.WebAPI.Filters;
-using Minio;
-// using JWTAuthTemplate.Extensions;
 
-namespace JWTAuthTemplate.WebAPI
+namespace JWTAuthTemplate.WebAPI;
+
+/// <summary>Точка входа: сборка зависимостей слоёв и конвейер HTTP.</summary>
+public class Startup
 {
-    public class Startup
+    public static void Main(string[] args)
     {
-        public static void Main(string[] args)
+        var builder = WebApplication.CreateBuilder(args);
+        var config = builder.Configuration;
+
+        // Переменные окружения Docker имеют приоритет над appsettings.json.
+        config["JWT:Secret"] = Environment.GetEnvironmentVariable("JWT_SECRET") ?? config["JWT:Secret"];
+        config["JWT:ValidAudience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? config["JWT:ValidAudience"];
+        config["JWT:ValidIssuer"] = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? config["JWT:ValidIssuer"];
+
+        builder.Services.AddCors(options => options.AddPolicy("AllowAll",
+            policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+
+        builder.Services.AddApplication();
+        builder.Services.AddInfrastructure(config);
+
+        builder.Services.AddControllers(options => options.Filters.Add<SuccessResponseFilter>());
+        builder.Services.AddEndpointsApiExplorer();
+        builder.Services.AddHttpContextAccessor();
+
+        // Схема по умолчанию — JWT; cookie выставляется при входе для браузерного клиента.
+        builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer()
+            .AddCookie(options =>
+            {
+                options.Cookie.HttpOnly = true;
+                options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                options.LoginPath = "/account/login";
+            });
+        // Те же параметры проверки, что использует TokenService.
+        builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<TokenValidationParameters>((options, parameters) => options.TokenValidationParameters = parameters);
+
+        if (builder.Environment.IsDevelopment())
+            builder.Services.AddSwaggerGen(ConfigureSwagger);
+
+        var app = builder.Build();
+        if (config.GetValue("Database:ApplyMigrations", true))
         {
-            var builder = WebApplication.CreateBuilder(args);
-
-            // Add services to the container.
-            builder.Services.AddCors(options =>
-            {
-                options.AddPolicy("AllowAll",
-                    builder =>
-                    {
-                        builder.AllowAnyOrigin()
-                               .AllowAnyMethod()
-                               .AllowAnyHeader();
-                    });
-            });
-
-            builder.Services.Configure<MinioSettingsDTO>(builder.Configuration.GetSection("MinioSettings"));
-            //builder.Services.AddSingleton<MinioService>();
-
-            builder.Services.AddControllers(options => options.Filters.Add<SuccessResponseFilter>());
-            builder.Services.AddEndpointsApiExplorer();
-
-            builder.Configuration["JWT:Secret"] = Environment.GetEnvironmentVariable("JWT_SECRET") ?? builder.Configuration["JWT:Secret"];
-            builder.Configuration["JWT:ValidAudience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? builder.Configuration["JWT:ValidAudience"];
-            builder.Configuration["JWT:ValidIssuer"] = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? builder.Configuration["JWT:ValidIssuer"];
-            var connectionString = Environment.GetEnvironmentVariable("CONNECTION_STRING") ?? builder.Configuration.GetConnectionString("DefaultConnection");
-
-
-            builder.Services.AddSingleton<TokenValidationParameters>(sp =>
-            {
-                var config = sp.GetRequiredService<IConfiguration>();
-
-                var secretKey = Encoding.UTF8.GetBytes(config["JWT:Secret"]!);
-                var symmetricSecurityKey = new SymmetricSecurityKey(secretKey);
-
-                return new TokenValidationParameters
-                {
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = symmetricSecurityKey,
-                    ValidateIssuer = true,
-                    ValidIssuer = config["JWT:ValidIssuer"],
-                    ValidateAudience = true,
-                    ValidAudience = config["JWT:ValidAudience"],
-                    ValidateLifetime = true,
-                    ClockSkew = TimeSpan.Zero
-                };
-            });
-
-
-            //Add Postgres database
-            builder.Services.AddDbContext<Context>(options =>
-            {
-                options.UseNpgsql(connectionString);
-            });
-
-            //Add identity
-            builder.Services.AddIdentity<ApplicationUser, ApplicationRole>()
-                .AddEntityFrameworkStores<Context>()
-                .AddDefaultTokenProviders();
-
-            //Set up JWT
-            builder.Services.AddAuthentication(opts =>
-                {
-                    opts.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                    opts.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-                })
-                //TODO: CHANGE THESE VALUES!!!
-                //These settings are super insecure. DO NOT USE THESE IN PRODUCTION.
-                .AddJwtBearer(opts =>
-                {
-                    opts.TokenValidationParameters = new TokenValidationParameters()
-                    {
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidAudience = builder.Configuration["JWT:ValidAudience"],
-                        ValidIssuer = builder.Configuration["JWT:ValidIssuer"],
-                        IssuerSigningKey =
-                            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JWT:Secret"]!))
-                    };
-                })
-                .AddCookie(opts =>
-                {
-                    opts.Cookie.HttpOnly = true;
-                    opts.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-                    opts.LoginPath = "/account/login"; // Define your login path
-                });
-
-            builder.Services.AddHttpContextAccessor();
-
-            //builder.Services.AddScoped<TestMatrixService>();
-
-
-            // Registration
-            builder.Services.AddScoped<IUserService, UserService>();
-            builder.Services.AddScoped<ITokenService, TokenService>();
-            builder.Services.AddScoped<IRoleService, RoleService>();
-            builder.Services.AddScoped<ISessionService, SessionService>();
-            builder.Services.AddScoped<IMinioService, MinioService>();
-            builder.Services.AddSingleton<IMinioClient>(sp =>
-            {
-                var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MinioSettingsDTO>>().Value;
-                return new MinioClient().WithEndpoint(settings.Endpoint)
-                    .WithCredentials(settings.AccessKey, settings.SecretKey).Build();
-            });
-            builder.Services.AddScoped<IObjectStorage, MinioObjectStorage>();
-            builder.Services.AddScoped<IUploadRepository, UploadRepository>();
-            builder.Services.AddScoped<IChunkUploadService, ChunkUploadService>();
-            builder.Services.AddScoped<IReferencesRepository, ReferencesRepository>();
-            builder.Services.AddScoped<IFileContentService, FileContentService>();
-            builder.Services.AddScoped<ILegacyUserRepository, LegacyUserRepository>();
-            builder.Services.AddScoped<ILegacyUserService, LegacyUserService>();
-            builder.Services.AddScoped<IMatrixService, TestMatrixService>();
-            builder.Services.AddScoped<IPreprocessService, PreprocessService>();
-            builder.Services.AddScoped<IAnalysisService, AnalysisService>();
-            builder.Services.AddScoped<IAnalysisAlgorithm, PcaAnalysisAlgorithm>();
-            builder.Services.AddScoped<IAnalysisDataReader, ExcelAnalysisDataReader>();
-
-
-            if (builder.Environment.IsDevelopment())
-            {
-                //Comment this out to avoid seed data
-                //SampleSeedData.SeedData(builder.Services.BuildServiceProvider().GetRequiredService<ApplicationDbContext>());
-
-                builder.Services.AddSwaggerGen(c =>
-                {
-                    c.SwaggerDoc("v1", new() { Title = "JWTAuthTemplate", Version = "v1"});
-
-                    c.MapType<IFormFile>(() => new OpenApiSchema
-                    {
-                        Type = "string",
-                        Format = "binary"
-                    });
-
-                    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-                    {
-                        In = ParameterLocation.Header,
-                        Description = "Please enter a valid token",
-                        Name = "Authorization",
-                        Type = SecuritySchemeType.Http,
-                        BearerFormat = "JWT",
-                        Scheme = "Bearer"
-
-                    });
-                    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-                    {
-                        {
-                            new OpenApiSecurityScheme
-                            {
-                                Reference = new OpenApiReference
-                                {
-                                    Type=ReferenceType.SecurityScheme,
-                                    Id="Bearer"
-                                }
-                            },
-                            new string[]{}
-                        }
-                    });
-                });
-            }
-
-            var app = builder.Build();
-            if (builder.Configuration.GetValue("Database:ApplyMigrations", true))
-            {
-                using var scope = app.Services.CreateScope();
-                DatabaseMigrationRunner.Migrate(scope.ServiceProvider.GetRequiredService<Context>());
-            }
-
-            app.UseCors("AllowAll");
-            // Configure the HTTP request pipeline.
-            if (app.Environment.IsDevelopment())
-            {
-                app.UseSwagger();
-                app.UseSwaggerUI();
-            }
-
-            //app.UseHttpsRedirection();
-            app.UseAuthentication();
-            app.UseAuthorization();
-            app.MapControllers();
-            app.Run();
+            using var scope = app.Services.CreateScope();
+            DatabaseMigrationRunner.Migrate(scope.ServiceProvider.GetRequiredService<Context>());
         }
+
+        app.UseCors("AllowAll");
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.MapControllers();
+        app.Run();
+    }
+
+    private static void ConfigureSwagger(Swashbuckle.AspNetCore.SwaggerGen.SwaggerGenOptions c)
+    {
+        c.SwaggerDoc("v1", new OpenApiInfo { Title = "JWTAuthTemplate", Version = "v1" });
+        c.MapType<IFormFile>(() => new OpenApiSchema { Type = "string", Format = "binary" });
+        c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+        {
+            In = ParameterLocation.Header,
+            Description = "Введите JWT-токен",
+            Name = "Authorization",
+            Type = SecuritySchemeType.Http,
+            BearerFormat = "JWT",
+            Scheme = "Bearer"
+        });
+        c.AddSecurityRequirement(new OpenApiSecurityRequirement
+        {
+            {
+                new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
+                Array.Empty<string>()
+            }
+        });
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 namespace JWTAuthTemplate.Infrastructure.Database;
 
+/// <summary>Применение миграций при старте с защитой legacy-базы от неверной цепочки миграций.</summary>
 public static class DatabaseMigrationRunner
 {
     public static void Migrate(Context context)
@@ -16,7 +17,7 @@ public static class DatabaseMigrationRunner
                 throw new InvalidOperationException(
                     "Обнаружена legacy-база с AddDocumentVersioning и другой цепочкой миграций. " +
                     "Автоматический запуск develop Init остановлен для защиты данных. " +
-                    "Сделайте резервную копию, прочитайте MIGRATION_REPAIR.md и выполните " +
+                    "Сделайте резервную копию, прочитайте раздел о миграции в README.md и выполните " +
                     "scripts/repair_legacy_database.sql с явным часовым поясом старых дат. " +
                     "Не удаляйте базу, таблицы или историю миграций.");
             }

@@ -1,10 +1,10 @@
-﻿namespace JWTAuthTemplate.DTO.Identity
+namespace JWTAuthTemplate.Shared.Dtos;
+
+/// <summary>Связь пользователя с ролью.</summary>
+public class UserRoleDTO
 {
-    public class UserRoleDTO
-    {
-        public UserDTO User { get; set; } = null!;
-        public string UserId { get; set; } = null!;
-        public RoleDTO Role { get; set; } = null!;
-        public string RoleId { get; set; } = null!;
-    }
+    public UserDTO User { get; set; } = null!;
+    public string UserId { get; set; } = null!;
+    public RoleDTO Role { get; set; } = null!;
+    public string RoleId { get; set; } = null!;
 }

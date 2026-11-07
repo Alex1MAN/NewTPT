@@ -1,245 +1,216 @@
 using JWTAuthTemplate.Application.Interfaces;
+using JWTAuthTemplate.Application.Models;
+using JWTAuthTemplate.Application.Services;
 using JWTAuthTemplate.Shared.Dtos;
+using JWTAuthTemplate.WebAPI.Extensions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JWTAuthTemplate.WebAPI.Controllers;
 
+/// <summary>
+/// Файлы, документы и их версии в MinIO. Маршруты master-версии (CamelCase) сохранены
+/// для старого клиента и обслуживаются теми же сервисами, что и новые.
+/// </summary>
 [ApiController]
 [Route("minio")]
-public partial class MinioController : BaseController
+public sealed class MinioController : BaseController
 {
-    private readonly IMinioService _minioService;
+    private const long ChunkRequestLimit = ChunkUploadService.MaxChunkBytes + 65536;
+    private readonly IDocumentService _documents;
+    private readonly IFileContentService _content;
+    private readonly IChunkUploadService _chunks;
 
-    public MinioController(IMinioService minioService)
-    {
-        _minioService = minioService;
-    }
+    public MinioController(IDocumentService documents, IFileContentService content, IChunkUploadService chunks)
+        => (_documents, _content, _chunks) = (documents, content, chunks);
 
-    #region Бакеты
+    #region Бакеты и загрузка
 
     [HttpPost("create-bucket")]
     [HttpPost("CreateBucket")]
-    public async Task<IActionResult> CreateBucket(string bucketName)
+    public Task<IActionResult> CreateBucket(string bucketName) => ExecuteSafeAsync(async () =>
     {
-        return await ExecuteSafeAsync(async () =>
-        {
-            await _minioService.CreateBucketAsync(bucketName);
-            return Ok(true);
-        });
-    }
+        await _documents.CreateBucketAsync(bucketName);
+        return Ok(true);
+    });
 
-    #endregion
-
-    #region Загрузка файлов (создание документов)
-
-    /// <summary>
-    /// Загрузить файлы. Для каждого файла создаётся документ с первой версией.
-    /// </summary>
+    /// <summary>Загрузить файлы; для каждого создаётся документ с первой версией.</summary>
     [HttpPost("upload-files")]
-    public async Task<IActionResult> UploadFiles(string bucketName, [FromForm] List<IFormFile> filesData)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var result = await _minioService.UploadFilesAsync(bucketName, filesData);
-            return Ok(result);
-        });
-    }
+    public Task<IActionResult> UploadFiles([FromQuery] string bucketName, [FromForm] List<IFormFile> filesData)
+        => Upload(bucketName, filesData, checkUnique: false);
 
-    /// <summary>
-    /// Низкоуровневая загрузка одного файла в MinIO (без создания документа)
-    /// </summary>
+    /// <summary>Маршрут master-версии: бакет передаётся полем формы.</summary>
+    [HttpPost("UploadFilesUpdateReferences")]
+    public Task<IActionResult> UploadFilesUpdateReferences([FromForm] string bucketName, [FromForm] List<IFormFile> filesData)
+        => Upload(bucketName, filesData, checkUnique: false);
+
+    /// <summary>То же, но с предварительной проверкой уникальности имён файлов (409 при повторе).</summary>
+    [HttpPost("UploadFilesUpdateReferences_2")]
+    public Task<IActionResult> UploadFilesUnique([FromForm] string bucketName, [FromForm] List<IFormFile> filesData)
+        => Upload(bucketName, filesData, checkUnique: true);
+
+    private Task<IActionResult> Upload(string bucketName, List<IFormFile> filesData, bool checkUnique) => ExecuteSafeAsync(async () =>
+    {
+        if (checkUnique)
+            await _documents.EnsureUniqueFilesAsync(bucketName, filesData.Select(f => f.FileName).ToList());
+        return Ok(await _documents.UploadFilesAsync(bucketName, filesData.ToFileUploads()));
+    });
+
+    /// <summary>Положить файл в MinIO без создания документа.</summary>
     [HttpPost("upload-file")]
-    public async Task<IActionResult> UploadFile(string bucketName, string objectName, IFormFile file)
+    public Task<IActionResult> UploadFile(string bucketName, string objectName, IFormFile file) => ExecuteSafeAsync(async () =>
     {
-        return await ExecuteSafeAsync(async () =>
+        await _documents.PutObjectAsync(bucketName, objectName, file.ToFileUpload());
+        return Ok(true);
+    });
+
+    /// <summary>Тестовая загрузка master-версии: бакет "44444", объект "test13".</summary>
+    [HttpPost("TestUploadFile")]
+    public Task<IActionResult> TestUploadFile(IFormFile file) => ExecuteSafeAsync(async () =>
+    {
+        if (file.Length == 0) throw new ArgumentException("File is required.");
+        await _documents.CreateBucketAsync("44444");
+        await _documents.PutObjectAsync("44444", "test13", file.ToFileUpload());
+        return Ok(true);
+    });
+
+    [HttpPost("UploadChunk")]
+    [RequestSizeLimit(ChunkRequestLimit)]
+    [RequestFormLimits(MultipartBodyLengthLimit = ChunkRequestLimit, MemoryBufferThreshold = (int)ChunkRequestLimit)]
+    public Task<IActionResult> UploadChunk([FromForm] string bucketName, [FromForm] string uploadId,
+        [FromForm] string fileName, [FromForm] int chunkIndex, [FromForm] int totalChunks,
+        IFormFile? chunk, CancellationToken ct) => ExecuteSafeAsync(async () =>
+    {
+        if (chunk == null) throw new ArgumentException("Chunk missing.");
+        using var stream = chunk.OpenReadStream();
+        await _chunks.UploadChunk(new UploadChunkRequest
         {
-            using var stream = file.OpenReadStream();
-            await _minioService.UploadFileAsync(bucketName, objectName, stream, file.Length);
-            return Ok(true);
-        });
-    }
+            BucketName = bucketName,
+            UploadId = uploadId,
+            FileName = fileName,
+            ChunkIndex = chunkIndex,
+            TotalChunks = totalChunks
+        }, stream, chunk.Length, ct);
+        return Ok(new { success = true, chunkIndex });
+    });
+
+    [HttpPost("CompleteUpload")]
+    public Task<IActionResult> CompleteUpload([FromBody] CompleteUploadRequest request, CancellationToken ct)
+        => ExecuteSafeAsync(async () => Ok(await _chunks.CompleteUpload(request, ct)));
 
     #endregion
 
-    #region Документы
+    #region Документы и версии
 
-    /// <summary>
-    /// Получить все документы пользователя
-    /// </summary>
     [HttpGet("documents/{userId}")]
-    public async Task<IActionResult> GetDocuments(string userId)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var documents = await _minioService.GetDocumentsByUserIdAsync(userId);
-            return Ok(documents);
-        });
-    }
+    public Task<IActionResult> GetDocuments(string userId)
+        => ExecuteSafeAsync(async () => Ok(await _documents.GetDocumentsAsync(userId)));
 
-    /// <summary>
-    /// Получить документ по ID
-    /// </summary>
     [HttpGet("documents/detail/{documentId}")]
-    public async Task<IActionResult> GetDocument(int documentId)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var document = await _minioService.GetDocumentByIdAsync(documentId);
-            if (document == null)
-                return NotFound($"Document with ID {documentId} not found");
-            return Ok(document);
-        });
-    }
+    public Task<IActionResult> GetDocument(int documentId)
+        => ExecuteSafeAsync(async () => Ok(await _documents.GetDocumentAsync(documentId)));
 
-    /// <summary>
-    /// Удалить документ и все его версии
-    /// </summary>
+    /// <summary>Удалить документ со всеми версиями.</summary>
     [HttpDelete("documents/{documentId}")]
-    public async Task<IActionResult> DeleteDocument(int documentId)
+    public Task<IActionResult> DeleteDocument(int documentId) => ExecuteSafeAsync(async () =>
     {
-        return await ExecuteSafeAsync(async () =>
-        {
-            await _minioService.DeleteDocumentAsync(documentId);
-            return Ok(true);
-        });
-    }
+        await _documents.DeleteDocumentAsync(documentId);
+        return Ok(true);
+    });
 
-    #endregion
-
-    #region Версии документов
-
-    /// <summary>
-    /// Получить историю всех версий документа
-    /// </summary>
     [HttpGet("documents/{documentId}/versions")]
-    public async Task<IActionResult> GetDocumentVersions(int documentId)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var versions = await _minioService.GetDocumentVersionsAsync(documentId);
-            return Ok(versions);
-        });
-    }
+    public Task<IActionResult> GetDocumentVersions(int documentId)
+        => ExecuteSafeAsync(async () => Ok(await _documents.GetVersionsAsync(documentId)));
 
-    /// <summary>
-    /// Получить информацию о конкретной версии
-    /// </summary>
-    [HttpGet("documents/versions/{versionId}")]
-    public async Task<IActionResult> GetDocumentVersion(int versionId)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var version = await _minioService.GetDocumentVersionByIdAsync(versionId);
-            if (version == null)
-                return NotFound($"Version with ID {versionId} not found");
-            return Ok(version);
-        });
-    }
-
-    /// <summary>
-    /// Создать новую версию существующего документа
-    /// </summary>
     [HttpPost("documents/{documentId}/versions")]
-    public async Task<IActionResult> CreateNewVersion(int documentId, IFormFile file)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var version = await _minioService.CreateNewVersionAsync(documentId, file);
-            return Ok(version);
-        });
-    }
+    public Task<IActionResult> CreateNewVersion(int documentId, IFormFile file)
+        => ExecuteSafeAsync(async () => Ok(await _documents.CreateVersionAsync(documentId, file.ToFileUpload())));
 
-    /// <summary>
-    /// Удалить конкретную версию документа
-    /// </summary>
+    [HttpGet("documents/versions/{versionId}")]
+    public Task<IActionResult> GetDocumentVersion(int versionId)
+        => ExecuteSafeAsync(async () => Ok(await _documents.GetVersionAsync(versionId)));
+
+    /// <summary>Удалить версию; последнюю версию удалить нельзя (409).</summary>
     [HttpDelete("documents/versions/{versionId}")]
-    public async Task<IActionResult> DeleteDocumentVersion(int versionId)
+    public Task<IActionResult> DeleteDocumentVersion(int versionId) => ExecuteSafeAsync(async () =>
     {
-        return await ExecuteSafeAsync(async () =>
-        {
-            await _minioService.DeleteDocumentVersionAsync(versionId);
-            return Ok(true);
-        });
-    }
+        await _documents.DeleteVersionAsync(versionId);
+        return Ok(true);
+    });
 
-    /// <summary>
-    /// Скачать конкретную версию файла
-    /// </summary>
     [HttpGet("documents/versions/{versionId}/download")]
-    public async Task<IActionResult> DownloadVersion(int versionId)
+    public Task<IActionResult> DownloadVersion(int versionId) => ExecuteSafeAsync(async () =>
     {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var version = await _minioService.GetDocumentVersionByIdAsync(versionId);
-            if (version == null)
-                return NotFound($"Version with ID {versionId} not found");
+        var (content, fileName) = await _documents.OpenVersionAsync(versionId);
+        return File(content, "application/octet-stream", fileName);
+    });
 
-            // Извлекаем bucketName из MinioObjectName (первый сегмент пути)
-            var parts = version.MinioObjectName.Split('/');
-            var bucketName = parts[0];
+    [HttpPost("AddReferenceInPostgre")]
+    public Task<IActionResult> AddReferenceInPostgre([FromBody] UserReferencesInMinio reference) => ExecuteSafeAsync(async () =>
+    {
+        await _documents.AddReferenceAsync(reference);
+        return CreatedAtAction(nameof(GetFileReferencesByUserId), new { userId = reference.UserId }, reference);
+    });
 
-            var stream = await _minioService.GetFileAsync(bucketName, version.MinioObjectName);
-            return File(stream, "application/octet-stream", version.OriginalFileName);
-        });
-    }
+    [HttpGet("GetFileReferencesByUserId")]
+    public Task<IActionResult> GetFileReferencesByUserId(string userId)
+        => ExecuteSafeAsync(async () => Ok(await _documents.GetReferencesAsync(userId)));
 
     #endregion
 
-    #region Низкоуровневые операции с файлами
+    #region Файлы
 
     [HttpPost("get-file")]
-    public async Task<IActionResult> GetFile(string bucketName, string objectName)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var stream = await _minioService.GetFileAsync(bucketName, objectName);
-            return File(stream, "application/octet-stream", objectName);
-        });
-    }
+    public Task<IActionResult> GetFile(string bucketName, string objectName) => DownloadObject(bucketName, objectName);
+
+    [HttpGet("GetFileContent")]
+    public Task<IActionResult> GetFileContent(string bucketName, string fileName) => DownloadObject(bucketName, fileName);
 
     [HttpPost("get-file-url")]
-    public async Task<IActionResult> GetFileUrl(string bucketName, string objectName)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var url = await _minioService.GetFileUrlAsync(bucketName, objectName);
-            return Ok(url);
-        });
-    }
+    public Task<IActionResult> GetFileUrl(string bucketName, string objectName)
+        => ExecuteSafeAsync(async () => Ok(await _documents.GetObjectUrlAsync(bucketName, objectName)));
+
+    [HttpGet("GetUrlFileFromMinio")]
+    public Task<IActionResult> GetUrlFileFromMinio(string bucketName, string objectName)
+        => ExecuteSafeAsync(async () => Ok(new { Url = await _documents.GetObjectUrlAsync(bucketName, objectName) }));
+
+    private Task<IActionResult> DownloadObject(string bucketName, string objectName) => ExecuteSafeAsync(async () =>
+        File(await _documents.OpenObjectAsync(bucketName, objectName), "application/octet-stream", Path.GetFileName(objectName)));
 
     #endregion
 
-    #region Парсинг содержимого файлов
+    #region Содержимое Excel/SPC
 
     [HttpPost("get-excel-content")]
-    public async Task<IActionResult> GetExcelFileContentAsJson(string bucketName, string objectName)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var content = await _minioService.GetExcelFileContentAsJson(bucketName, objectName);
-            return Ok(content);
-        });
-    }
+    public Task<IActionResult> GetExcelContent(string bucketName, string objectName)
+        => ExecuteSafeAsync(async () => Ok(await _content.GetExcelContentAsync(bucketName, objectName)));
+
+    [HttpGet("GetAllTableFromExcel")]
+    public Task<IActionResult> GetAllTableFromExcel(string bucketName, string fileName) => GetExcelContent(bucketName, fileName);
 
     [HttpPost("get-excel-content-limits")]
-    public async Task<IActionResult> GetExcelFileContentAsJsonWithLimits(string bucketName, string objectName, double inputX1, double inputX2, double inputY1, double inputY2)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var content = await _minioService.GetExcelFileContentAsJsonWithLimits(bucketName, objectName, inputX1, inputX2, inputY1, inputY2);
-            return Ok(content);
-        });
-    }
+    public Task<IActionResult> GetExcelContentWithLimits(string bucketName, string objectName,
+        double inputX1, double inputX2, double inputY1, double inputY2)
+        => ExecuteSafeAsync(async () => Ok(await _content.GetExcelContentWithLimitsAsync(
+            bucketName, objectName, inputX1, inputX2, inputY1, inputY2)));
+
+    [HttpGet("GetTableFromExcelWithLimits")]
+    public Task<IActionResult> GetTableFromExcelWithLimits(string bucketName, string fileName,
+        double inputX1, double inputX2, double inputY1, double inputY2)
+        => GetExcelContentWithLimits(bucketName, fileName, inputX1, inputX2, inputY1, inputY2);
 
     [HttpPost("get-spc-content")]
-    public async Task<IActionResult> GetSPCFileContentAsJson(string bucketName, string objectName)
-    {
-        return await ExecuteSafeAsync(async () =>
-        {
-            var content = await _minioService.GetSPCFileContentAsJson(bucketName, objectName);
-            return Ok(content);
-        });
-    }
+    public Task<IActionResult> GetSpcContent(string bucketName, string objectName)
+        => ExecuteSafeAsync(async () => Ok(await _content.GetSpcContentAsync(bucketName, objectName)));
+
+    [HttpGet("GetTablesFromSeveralSPC")]
+    public Task<IActionResult> GetTablesFromSeveralSpc(string bucketName, [FromQuery] string[] fileNames)
+        => ExecuteSafeAsync(async () => Ok(await _content.GetTablesFromSeveralSpcAsync(bucketName, fileNames)));
+
+    [HttpGet("GetAllContentFromFiles")]
+    public Task<IActionResult> GetAllContentFromFiles(string bucketName, [FromQuery] string[] fileNames,
+        string allFilesExtension, double inputX1, double inputX2, double inputY1, double inputY2)
+        => ExecuteSafeAsync(async () => Ok(await _content.GetAllContentFromFilesAsync(
+            bucketName, fileNames, allFilesExtension, inputX1, inputX2, inputY1, inputY2)));
 
     #endregion
 }

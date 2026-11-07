@@ -1,31 +1,27 @@
-﻿using JWTAuthTemplate.DTO.Identity;
-using JWTAuthTemplate.Models.Identity;
+namespace JWTAuthTemplate.Application.Interfaces;
 
-/*
-    Administrator — пользователи с полным контролем над системой.
-    Moderator — пользователи с ограниченным административным доступом.
-    User — обычные зарегистрированные пользователи.
-    Guest — незарегистрированные пользователи.
-*/
-
-namespace JWTAuthTemplate.Application.Interfaces
+/// <summary>
+/// Управление ролями. Примеры ролей:
+/// Administrator — полный контроль над системой;
+/// Moderator — ограниченный административный доступ;
+/// User — обычный зарегистрированный пользователь;
+/// Guest — незарегистрированный пользователь.
+/// </summary>
+public interface IRoleService
 {
-    public interface IRoleService
-    {
-        /*
-        Task<bool> CreateRole(RoleDTO dto);
-        Task<IEnumerable<string>> GetAllRoles();
-        */
-        
-        //Task<(bool Success, string ErrorMessage)> AddRole(RoleDTO dto);
+    /// <summary>false, если роль уже существует или не создана.</summary>
+    Task<bool> CreateRoleAsync(string roleName);
 
-        Task<bool> CreateRoleAsync(string roleName);
-        Task<bool> DeleteRoleAsync(string roleName);
-        Task<List<string>> GetAllRolesAsync();
-        Task<bool> AssignRoleToUserAsync(ApplicationUser user, string roleName);
-        Task<bool> RemoveRoleFromUserAsync(ApplicationUser user, string roleName);
-        Task<List<string>> GetUserRolesAsync(ApplicationUser user);
-        Task<bool> CheckRoleExist(string roleName);
-        Task<bool> CheckUserInRoleAsync(ApplicationUser user, string roleName);
-    }
+    /// <summary>false, если роли нет.</summary>
+    Task<bool> DeleteRoleAsync(string roleName);
+
+    Task<List<string>> GetAllRolesAsync();
+
+    /// <summary>Назначает роль. KeyNotFound — нет пользователя/роли, Conflict — роль уже назначена.</summary>
+    Task AssignRoleAsync(string userId, string roleName);
+
+    /// <summary>Снимает роль. KeyNotFound — нет пользователя/роли, Conflict — роль не назначена.</summary>
+    Task RemoveRoleAsync(string userId, string roleName);
+
+    Task<List<string>> GetUserRolesAsync(string userId);
 }

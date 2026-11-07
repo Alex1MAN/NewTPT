@@ -170,7 +170,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("UploadParts");
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationRole", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationRole", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("text");
@@ -196,7 +196,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("AspNetRoles", (string)null);
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationRoleClaim", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationRoleClaim", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -221,7 +221,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("AspNetRoleClaims", (string)null);
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUser", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("text");
@@ -294,7 +294,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserClaim", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserClaim", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -319,7 +319,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("AspNetUserClaims", (string)null);
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserLogin", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserLogin", b =>
                 {
                     b.Property<string>("LoginProvider")
                         .HasColumnType("text");
@@ -341,7 +341,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("AspNetUserLogins", (string)null);
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserRole", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserRole", b =>
                 {
                     b.Property<string>("UserId")
                         .HasColumnType("text");
@@ -356,7 +356,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("AspNetUserRoles", (string)null);
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserToken", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserToken", b =>
                 {
                     b.Property<string>("UserId")
                         .HasColumnType("text");
@@ -375,7 +375,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.UserReferencesInMinio", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.UserReferencesInMinio", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -400,7 +400,7 @@ namespace JWTAuthTemplate.Migrations
                     b.ToTable("UserReferencesInMinio");
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.UserSessionStatus", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.UserSessionStatus", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -439,7 +439,7 @@ namespace JWTAuthTemplate.Migrations
                         .HasForeignKey("CurrentVersionId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationUser", "User")
+                    b.HasOne("JWTAuthTemplate.Application.Models.ApplicationUser", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -470,42 +470,42 @@ namespace JWTAuthTemplate.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationRoleClaim", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationRoleClaim", b =>
                 {
-                    b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationRole", null)
+                    b.HasOne("JWTAuthTemplate.Application.Models.ApplicationRole", null)
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserClaim", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserClaim", b =>
                 {
-                    b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationUser", null)
+                    b.HasOne("JWTAuthTemplate.Application.Models.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserLogin", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserLogin", b =>
                 {
-                    b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationUser", null)
+                    b.HasOne("JWTAuthTemplate.Application.Models.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserRole", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserRole", b =>
                 {
-                    b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationRole", "Role")
+                    b.HasOne("JWTAuthTemplate.Application.Models.ApplicationRole", "Role")
                         .WithMany("Users")
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationUser", "User")
+                    b.HasOne("JWTAuthTemplate.Application.Models.ApplicationUser", "User")
                         .WithMany("Roles")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -516,9 +516,9 @@ namespace JWTAuthTemplate.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUserToken", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUserToken", b =>
                 {
-                    b.HasOne("JWTAuthTemplate.Models.Identity.ApplicationUser", null)
+                    b.HasOne("JWTAuthTemplate.Application.Models.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -535,12 +535,12 @@ namespace JWTAuthTemplate.Migrations
                     b.Navigation("Versions");
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationRole", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationRole", b =>
                 {
                     b.Navigation("Users");
                 });
 
-            modelBuilder.Entity("JWTAuthTemplate.Models.Identity.ApplicationUser", b =>
+            modelBuilder.Entity("JWTAuthTemplate.Application.Models.ApplicationUser", b =>
                 {
                     b.Navigation("Roles");
                 });

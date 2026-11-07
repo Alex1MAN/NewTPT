@@ -1,7 +1,7 @@
-﻿namespace JWTAuthTemplate.Application.Interfaces
+namespace JWTAuthTemplate.Application.Interfaces;
+
+/// <summary>Операции над матрицами.</summary>
+public interface IMatrixService
 {
-    public interface IMatrixService
-    {
-        double[][] Transpose(double[][] matrix);
-    }
+    double[][] Transpose(double[][] matrix);
 }

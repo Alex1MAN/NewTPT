@@ -1,16 +1,17 @@
-﻿using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
+using JWTAuthTemplate.Application.Models;
+using JWTAuthTemplate.Shared.Dtos;
 
-namespace JWTAuthTemplate.Application.Interfaces
+namespace JWTAuthTemplate.Application.Interfaces;
+
+/// <summary>Выпуск и обновление JWT и refresh-токенов.</summary>
+public interface ITokenService
 {
-    public interface ITokenService
-    {
-        string GenerateRefreshToken();
+    /// <summary>Выпускает пару токенов и сохраняет refresh-токен пользователю.</summary>
+    Task<IssuedTokens> IssueTokensAsync(ApplicationUser user);
 
-        Task<(JwtSecurityToken AccessToken, string RefreshToken)> RefreshTokensAsync(string accessToken, string refreshToken);
-
-        ClaimsPrincipal? GetPrincipalFromExpiredToken(string? token);
-
-        JwtSecurityToken CreateToken(List<Claim> authClaims);
-    }
+    /// <summary>Обменивает (в том числе просроченный) access-токен и refresh-токен на новую пару.</summary>
+    Task<RefreshResultDTO> RefreshTokensAsync(string accessToken, string refreshToken);
 }
+
+/// <summary>Выпущенная пара токенов.</summary>
+public sealed record IssuedTokens(string AccessToken, string RefreshToken, DateTime Expiration);

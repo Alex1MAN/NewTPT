@@ -1,5 +1,4 @@
-﻿using JWTAuthTemplate.Application.Models;
-using JWTAuthTemplate.Models.Identity;
+using JWTAuthTemplate.Application.Models;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +8,7 @@ namespace JWTAuthTemplate.Infrastructure.Database
     {
         public Context(DbContextOptions<Context> options) : base(options) { }
 
-        // Старая таблица — пока оставляем для миграции данных
+        // Таблица ссылок из master-версии — сохраняется для совместимости со старым клиентом
         public DbSet<UserReferencesInMinio> UserReferencesInMinio { get; set; }
 
         // Новые таблицы для системы версионности
@@ -23,6 +22,7 @@ namespace JWTAuthTemplate.Infrastructure.Database
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            // === Сессии загрузки по частям ===
             modelBuilder.Entity<ChunkUploadSession>(e =>
             {
                 e.HasKey(s => s.Key);
@@ -31,7 +31,7 @@ namespace JWTAuthTemplate.Infrastructure.Database
             });
             modelBuilder.Entity<UploadPart>().HasKey(p => new { p.SessionKey, p.ChunkIndex });
 
-            // === Существующие настройки (оставляем без изменений) ===
+            // === Связи пользователей и ролей Identity ===
             modelBuilder.Entity<ApplicationUser>(e =>
             {
                 e.HasMany(r => r.Roles)
@@ -51,7 +51,7 @@ namespace JWTAuthTemplate.Infrastructure.Database
             modelBuilder.Entity<ApplicationUser>().Navigation(e => e.Roles).AutoInclude();
             modelBuilder.Entity<ApplicationUserRole>().Navigation(e => e.Role).AutoInclude();
 
-            // === Новые настройки для системы версионности ===
+            // === Документы и версии ===
 
             // Document -> ApplicationUser (многие к одному)
             modelBuilder.Entity<Document>(entity =>

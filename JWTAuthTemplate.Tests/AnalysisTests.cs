@@ -1,17 +1,19 @@
 using ClosedXML.Excel;
 using JWTAuthTemplate.Application.Services;
 using JWTAuthTemplate.Application.Interfaces;
+using JWTAuthTemplate.Application.Models;
 using JWTAuthTemplate.Infrastructure.Analysis;
 using JWTAuthTemplate.Shared.Dtos;
 using MathNet.Numerics.LinearAlgebra;
-using TestPCA;
+
+using Moq;
 using Xunit;
 namespace JWTAuthTemplate.Tests;
 
 public class AnalysisTests
 {
     private static readonly double[][] Data = { new double[] { 1, 2 }, new double[] { 2, 4 }, new double[] { 3, 6 } };
-    private static AnalysisService Service() => new(new[] { new PcaAnalysisAlgorithm() }, new ExcelAnalysisDataReader());
+    private static AnalysisService Service() => new(new[] { new PcaAnalysisAlgorithm() }, new ExcelAnalysisDataReader(), Mock.Of<IObjectStorage>());
     [Fact]
     public void CorrelatedPcaMatchesAnalyticalSolution()
     {
@@ -69,7 +71,7 @@ public class AnalysisTests
     public void UnknownAlgorithmRejectedAndExtensionDoesNotRequireControllerChanges()
     {
         Assert.Throws<ArgumentException>(() => Service().Analyze(new AnalysisRequest { Method = "PLS", Data = Data }));
-        var service = new AnalysisService(new IAnalysisAlgorithm[] { new PcaAnalysisAlgorithm(), new EchoAlgorithm() }, new ExcelAnalysisDataReader());
+        var service = new AnalysisService(new IAnalysisAlgorithm[] { new PcaAnalysisAlgorithm(), new EchoAlgorithm() }, new ExcelAnalysisDataReader(), Mock.Of<IObjectStorage>());
         Assert.Equal("extended", service.Analyze(new AnalysisRequest { Method = "future", Data = Data }));
     }
     private sealed class EchoAlgorithm : IAnalysisAlgorithm
@@ -87,8 +89,9 @@ public class AnalysisTests
             for (int j = 0; j < 2; j++) sheet.Cell(i + 2, j + 1).Value = Data[i][j];
         sheet.Cell(5, 1).Value = "invalid";
         using var stream = new MemoryStream();
-        workbook.SaveAs(stream); stream.Position = 0;
-        var result = (PcaResult)Service().AnalyzeExcel(stream, "PCA", 0.95);
+        workbook.SaveAs(stream);
+        var bytes = stream.ToArray();
+        var result = (PcaResult)Service().AnalyzeExcel(new FileUpload("data.xlsx", bytes.Length, () => new MemoryStream(bytes)), "PCA", 0.95);
         Assert.Equal(3, result.RowCount);
         Assert.Equal(new[] { "A", "B" }, result.ColumnNames);
         Assert.Equal(1, result.ExplainedVarianceRatio[0], 12);
@@ -96,7 +99,7 @@ public class AnalysisTests
     [Fact]
     public void MatrixTransposeAndInvalidInput()
     {
-        var service = new TestMatrixService();
+        var service = new MatrixService();
         Assert.Equal(new[] { 1d, 2, 3 }, service.Transpose(Data)[0]);
         Assert.Throws<ArgumentException>(() => service.Transpose(Array.Empty<double[]>()));
     }

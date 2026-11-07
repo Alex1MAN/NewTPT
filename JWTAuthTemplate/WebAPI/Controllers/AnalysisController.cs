@@ -1,44 +1,43 @@
 using JWTAuthTemplate.Application.Interfaces;
+using JWTAuthTemplate.Application.Validation;
 using JWTAuthTemplate.Shared.Dtos;
+using JWTAuthTemplate.WebAPI.Extensions;
 using Microsoft.AspNetCore.Mvc;
+
 namespace JWTAuthTemplate.WebAPI.Controllers;
+
+/// <summary>Анализ данных (PCA и будущие методы).</summary>
 [ApiController]
 [Route("analysis")]
 public sealed class AnalysisController : BaseController
 {
+    private const int MaxJsonBytes = 32 * 1024 * 1024;
     private readonly IAnalysisService _analysis;
-    private readonly IMinioService _minio;
-    public AnalysisController(IAnalysisService analysis, IMinioService minio) => (_analysis, _minio) = (analysis, minio);
+
+    public AnalysisController(IAnalysisService analysis) => _analysis = analysis;
+
     [HttpGet("methods")]
     public IActionResult GetMethods() => Ok(_analysis.GetMethods());
+
     [HttpPost("Analyze")]
-    [RequestSizeLimit(32 * 1024 * 1024)]
+    [RequestSizeLimit(MaxJsonBytes)]
     public Task<IActionResult> Analyze([FromBody] AnalysisRequest request)
-        => ExecuteSafeAsync(() => Task.FromResult<IActionResult>(Ok(_analysis.Analyze(request))));
+        => ExecuteSafeAsync(() => Ok(_analysis.Analyze(request)));
+
     [HttpPost("PCA")]
-    [RequestSizeLimit(32 * 1024 * 1024)]
+    [RequestSizeLimit(MaxJsonBytes)]
     public Task<IActionResult> PCA([FromBody] AnalysisRequest request)
     {
         request.Method = "PCA";
         return Analyze(request);
     }
+
     [HttpPost("AnalyzeExcel")]
-    [RequestSizeLimit(16 * 1024 * 1024)]
+    [RequestSizeLimit(AnalysisLimits.MaxExcelBytes)]
     public Task<IActionResult> AnalyzeExcel(IFormFile file, [FromQuery] string method = "PCA", [FromQuery] double varianceThreshold = 0.95)
-        => ExecuteSafeAsync(() =>
-        {
-            if (file.Length == 0 || !Path.GetExtension(file.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("A non-empty .xlsx file is required.");
-            using var stream = file.OpenReadStream();
-            return Task.FromResult<IActionResult>(Ok(_analysis.AnalyzeExcel(stream, method, varianceThreshold)));
-        });
+        => ExecuteSafeAsync(() => Ok(_analysis.AnalyzeExcel(file.ToFileUpload(), method, varianceThreshold)));
+
     [HttpPost("AnalyzeStoredExcel")]
     public Task<IActionResult> AnalyzeStoredExcel(string bucketName, string objectName, string method = "PCA", double varianceThreshold = 0.95)
-        => ExecuteSafeAsync(async () =>
-        {
-            if (!Path.GetExtension(objectName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
-                throw new ArgumentException("An .xlsx object is required.");
-            using var stream = await _minio.GetFileAsync(bucketName, objectName, 16 * 1024 * 1024);
-            return Ok(_analysis.AnalyzeExcel(stream, method, varianceThreshold));
-        });
+        => ExecuteSafeAsync(async () => Ok(await _analysis.AnalyzeStoredExcelAsync(bucketName, objectName, method, varianceThreshold)));
 }

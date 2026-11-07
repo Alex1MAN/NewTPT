@@ -1,10 +1,10 @@
 using System.Buffers.Binary;
 using JWTAuthTemplate.Application.Interfaces;
 using JWTAuthTemplate.Application.Models;
-using JWTAuthTemplate.Models.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 namespace JWTAuthTemplate.Infrastructure.Database;
+/// <summary>Сессии загрузки по частям; параллельные запросы одной сессии сериализуются pg_advisory_xact_lock.</summary>
 public sealed class UploadRepository : IUploadRepository
 {
     private readonly Context _context;
@@ -32,26 +32,9 @@ public sealed class UploadRepository : IUploadRepository
         public void Add(ChunkUploadSession session) => _context.ChunkUploadSessions.Add(session);
         public async Task<int> AddDocument(ChunkUploadSession session, long length, string etag, CancellationToken ct)
         {
-            var document = new Document
-            {
-                UserId = session.BucketName, OriginalName = session.FileName,
-                FileExtension = Path.GetExtension(session.FileName).TrimStart('.')
-            };
-            _context.Documents.Add(document);
-            await _context.SaveChangesAsync(ct);
-            var version = new DocumentVersion
-            {
-                DocumentId = document.Id, VersionNumber = 1, MinioObjectName = session.ObjectName,
-                ETag = etag, FileSize = length, OriginalFileName = session.FileName
-            };
-            _context.DocumentVersions.Add(version);
-            await _context.SaveChangesAsync(ct);
-            document.CurrentVersionId = version.Id;
-            _context.UserReferencesInMinio.Add(new UserReferencesInMinio
-            {
-                UserId = session.BucketName, FileName = session.FileName,
-                FileExtension = document.FileExtension, FileReferenceMinio = etag
-            });
+            var document = await DocumentWriter.AddDocumentAsync(_context, session.BucketName, session.FileName, ct);
+            await DocumentWriter.AddVersionAsync(_context, document, 1, session.ObjectName, etag, length, session.FileName, ct);
+            DocumentWriter.AddLegacyReference(_context, document, etag);
             return document.Id;
         }
         public async Task Commit(CancellationToken ct)

@@ -1,6 +1,6 @@
 using System.Text.Json;
 using JWTAuthTemplate.Application.Interfaces;
-using JWTAuthTemplate.Application.Services;
+using JWTAuthTemplate.Application.Exceptions;
 using JWTAuthTemplate.WebAPI.Controllers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -12,6 +12,7 @@ using Xunit;
 
 namespace JWTAuthTemplate.Tests;
 
+/// <summary>Контракт BaseController и AuthenticationController после слияния веток.</summary>
 public class MergeConflictResolutionTests
 {
     [Fact]
@@ -29,7 +30,7 @@ public class MergeConflictResolutionTests
             .BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         var controller = new AuthenticationController(
-            Mock.Of<IUserService>(), Mock.Of<ITokenService>())
+            Mock.Of<IUserService>(), Mock.Of<ITokenService>(), Mock.Of<IRoleService>())
         {
             ControllerContext = new ControllerContext { HttpContext = context }
         };
@@ -86,7 +87,7 @@ public class MergeConflictResolutionTests
         var controller = new BaseControllerHarness();
 
         var result = Assert.IsType<ConflictObjectResult>(await controller.RunSafe(
-            () => Task.FromException<IActionResult>(new UploadConflictException("chunk conflict"))));
+            () => Task.FromException<IActionResult>(new ConflictException("chunk conflict"))));
 
         Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
         Assert.Equal("chunk conflict", result.Value);

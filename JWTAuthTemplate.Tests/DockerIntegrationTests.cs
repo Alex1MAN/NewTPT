@@ -121,11 +121,18 @@ public class DockerIntegrationTests
         string role = "role" + Guid.NewGuid().ToString("N");
         await Ok(await _client.PostAsJsonAsync("/Auth/AddRole", new { name = role }));
         await Ok(await _client.PostAsJsonAsync("/User/AddRole?username=" + username, new { name = role }));
+        // Коды ошибок master-версии: повторное назначение — 400, снятие отсутствующей роли — 404.
+        var repeat = await _client.PostAsJsonAsync("/User/AddRole?username=" + username, new { name = role });
+        Assert.Equal(HttpStatusCode.BadRequest, repeat.StatusCode);
+        Assert.Equal($"User already in role '{role}'.", await repeat.Content.ReadAsStringAsync());
         var user = await Ok(await _client.GetAsync("/User/Get?username=" + username));
         Assert.Contains(role, user.GetRawText());
         using var remove = new HttpRequestMessage(HttpMethod.Delete, "/User/RemoveRole?username=" + username)
         { Content = JsonContent.Create(new { name = role }) };
         await Ok(await _client.SendAsync(remove));
+        using var removeAgain = new HttpRequestMessage(HttpMethod.Delete, "/User/RemoveRole?username=" + username)
+        { Content = JsonContent.Create(new { name = role }) };
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.SendAsync(removeAgain)).StatusCode);
         await Ok(await _client.PostAsJsonAsync("/User/SaveStatus?userId=" + id, new { fileName = "x", fileExtension = "xlsx", step = 1 }));
         await Ok(await _client.PostAsJsonAsync("/User/SaveStatus?userId=" + id, new { fileName = "x", fileExtension = "xlsx", step = 2 }));
         var statuses = await Ok(await _client.PostAsync("/User/GetAllStatusesByFileName?userId=" + id + "&fileName=x&fileExtension=xlsx", null));
@@ -133,9 +140,13 @@ public class DockerIntegrationTests
         var first = await Ok(await _client.PostAsync("/User/GetLatestStatusByFileNameAndTime?userId=" + id +
             "&fileName=x&fileExtension=xlsx&timeFilter=" + Uri.EscapeDataString("01.01.2020 00:00:00"), null));
         Assert.Equal(1, first.GetProperty("data").GetProperty("statusParamsDict").GetProperty("step").GetInt32());
+        // Маршруты /User master-версии возвращают и исходную JSON-строку параметров.
+        Assert.Contains("\"step\"", first.GetProperty("data").GetProperty("statusParams").GetString());
         _client.DefaultRequestHeaders.Authorization = new("Bearer", token);
         await Ok(await _client.PostAsJsonAsync("/sessions/save-status", new { fileName = "token-file", fileExtension = "csv" }));
-        await Ok(await _client.GetAsync("/sessions/latest-status"));
+        var latest = (await Ok(await _client.GetAsync("/sessions/latest-status"))).GetProperty("data");
+        Assert.False(latest.TryGetProperty("statusParams", out _));
+        Assert.Equal("token-file", latest.GetProperty("fileName").GetString());
         await Ok(await _client.PostAsJsonAsync("/Auth/RefreshToken", new { accessToken = token, refreshToken = refresh }));
     }
     [DockerFact]

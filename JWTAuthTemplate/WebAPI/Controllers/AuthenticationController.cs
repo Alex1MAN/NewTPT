@@ -1,120 +1,65 @@
+using System.Security.Claims;
 using JWTAuthTemplate.Application.Interfaces;
-using JWTAuthTemplate.DTO.Identity;
+using JWTAuthTemplate.Shared.Dtos;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
-using System.ComponentModel.DataAnnotations;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 
-namespace JWTAuthTemplate.WebAPI.Controllers
+namespace JWTAuthTemplate.WebAPI.Controllers;
+
+/// <summary>Регистрация, вход/выход и обновление токенов.</summary>
+[ApiController]
+[Route("auth")]
+public sealed class AuthenticationController : BaseController
 {
-    [ApiController]
-    [Route("auth")]
-    public class AuthenticationController : BaseController
+    private readonly IUserService _userService;
+    private readonly ITokenService _tokenService;
+    private readonly IRoleService _roleService;
+
+    public AuthenticationController(IUserService userService, ITokenService tokenService, IRoleService roleService)
+        => (_userService, _tokenService, _roleService) = (userService, tokenService, roleService);
+
+    [HttpPost("Register")]
+    public Task<IActionResult> Register([FromBody] RegisterDTO dto)
+        => ExecuteRegisterSafeAsync(() => _userService.Register(dto));
+
+    [HttpPost("Login")]
+    public Task<IActionResult> Login([FromBody] LoginDTO dto) => ExecuteSafeAsync(async () =>
     {
-        private readonly IUserService _userService;
-        private readonly ITokenService _tokenService;
-
-        public AuthenticationController(IUserService userService, ITokenService tokenService)
+        var authResult = await _userService.Authenticate(dto);
+        var identity = new ClaimsIdentity(new[]
         {
-            _userService = userService;
-            _tokenService = tokenService;
-        }
-
-
-        [HttpPost("Register")]
-        public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
+            new Claim(ClaimTypes.NameIdentifier, authResult.User.Id!),
+            new Claim(ClaimTypes.Name, authResult.User.Username!)
+        }, CookieAuthenticationDefaults.AuthenticationScheme);
+        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+            new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
+        Response.Cookies.Append("refreshToken", authResult.RefreshToken, new CookieOptions
         {
-            return await ExecuteRegisterSafeAsync(() => _userService.Register(dto));
-        }
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTimeOffset.UtcNow.AddDays(30)
+        });
+        return Ok(authResult);
+    });
 
+    [HttpPost("Logout")]
+    public Task<IActionResult> Logout() => ExecuteSafeAsync(async () =>
+    {
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        return Ok(true);
+    });
 
-        [HttpPost("Login")]
-        public async Task<IActionResult> Login([FromBody] LoginDTO dto)
-        {
-            return await ExecuteSafeAsync(async () =>
-            {
-                var authResult = await _userService.Authenticate(dto);
-                var claims = new List<Claim>
-                {
-                    new Claim(ClaimTypes.NameIdentifier, authResult.User.Id),
-                    new Claim(ClaimTypes.Name, authResult.User.Username),
-                };
-                var claimsIdentity = new ClaimsIdentity(claims,
-                    CookieAuthenticationDefaults.AuthenticationScheme);
-                await HttpContext.SignInAsync(
-                    CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(claimsIdentity),
-                    new AuthenticationProperties { IsPersistent = true });
-                Response.Cookies.Append("refreshToken", authResult.RefreshToken,
-                    new CookieOptions
-                    {
-                        HttpOnly = true,
-                        Secure = true,
-                        SameSite = SameSiteMode.Strict,
-                        Expires = DateTimeOffset.UtcNow.AddDays(30)
-                    });
-                return Ok(authResult);
-            });
-        }
+    [HttpPost("AddRole")]
+    public Task<IActionResult> AddRole([FromBody] RoleDTO role) => ExecuteSafeAsync(async () =>
+        await _roleService.CreateRoleAsync(role.Name) ? Ok(true) : Conflict("Role already exists or cannot be created."));
 
+    [HttpGet("GetRoles")]
+    public Task<IActionResult> GetRoles() => ExecuteSafeAsync(async () => Ok(await _roleService.GetAllRolesAsync()));
 
-        [HttpPost("Logout")]
-        public async Task<IActionResult> Logout()
-        {
-            return await ExecuteSafeAsync(async () =>
-            {
-                await HttpContext.SignOutAsync(
-                    CookieAuthenticationDefaults.AuthenticationScheme);
-
-                return Ok(true);
-            });
-        }
-
-        [HttpPost("AddRole")]
-        public Task<IActionResult> AddRole([FromBody] RoleDTO role, [FromServices] IRoleService service)
-            => ExecuteSafeAsync(async () =>
-            {
-                if (!await service.CreateRoleAsync(role.Name!)) return Conflict("Role already exists or cannot be created.");
-                return Ok(true);
-            });
-
-        [HttpGet("GetRoles")]
-        public Task<IActionResult> GetRoles([FromServices] IRoleService service)
-            => ExecuteSafeAsync(async () => Ok(await service.GetAllRolesAsync()));
-
-
-
-        [HttpPost("RefreshToken")]
-        public async Task<IActionResult> RefreshToken([FromBody] RefreshDTO model)
-        {
-            try
-            {
-                var result = await _tokenService.RefreshTokensAsync(model.AccessToken, model.RefreshToken);
-                var response = new
-                {
-                    JWT = new
-                    {
-                        Token = new JwtSecurityTokenHandler().WriteToken(result.AccessToken),
-                        result.RefreshToken,
-                        Expiration = result.AccessToken.ValidTo
-                    },
-                    User = new
-                    {
-                        id = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!,
-                        username = User.Identity!.Name!,
-                        email = User.FindFirst(ClaimTypes.Email)?.Value!,
-                        roles = User.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value)
-                    }
-                };
-                return Ok(response);
-            }
-            catch (SecurityTokenException ex)
-            {
-                return BadRequest(ex.Message);
-            }
-        }
-    }
+    /// <summary>Обмен access-токена (в том числе просроченного) и refresh-токена на новую пару.</summary>
+    [HttpPost("RefreshToken")]
+    public Task<IActionResult> RefreshToken([FromBody] RefreshDTO model)
+        => ExecuteSafeAsync(async () => Ok(await _tokenService.RefreshTokensAsync(model.AccessToken, model.RefreshToken)));
 }

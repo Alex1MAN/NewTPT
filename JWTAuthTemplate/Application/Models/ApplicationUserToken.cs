@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 
-namespace JWTAuthTemplate.Models.Identity
+namespace JWTAuthTemplate.Application.Models;
+
+/// <summary>Сущность Identity без дополнительных полей.</summary>
+public class ApplicationUserToken : IdentityUserToken<string>
 {
-    public class ApplicationUserToken: IdentityUserToken<string>
-    {
-    }
 }

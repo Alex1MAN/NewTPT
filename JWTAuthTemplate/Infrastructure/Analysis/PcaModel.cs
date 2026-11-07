@@ -1,7 +1,8 @@
-﻿using MathNet.Numerics.LinearAlgebra;
+using MathNet.Numerics.LinearAlgebra;
 
-namespace TestPCA;
+namespace JWTAuthTemplate.Infrastructure.Analysis;
 
+/// <summary>Модель PCA: стандартизация, ковариация, собственные векторы, доли дисперсии.</summary>
 public class PcaModel
 {
     private readonly RawData _rawData;

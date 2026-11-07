@@ -1,5 +1,6 @@
 namespace JWTAuthTemplate.Shared.Dtos;
 
+/// <summary>Завершение загрузки по частям.</summary>
 public class CompleteUploadRequest
 {
     public string UploadId { get; set; } = string.Empty;

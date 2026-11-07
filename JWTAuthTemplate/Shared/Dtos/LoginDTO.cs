@@ -1,12 +1,10 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
-namespace JWTAuthTemplate.DTO.Identity
+namespace JWTAuthTemplate.Shared.Dtos;
+
+/// <summary>Данные для входа.</summary>
+public class LoginDTO
 {
-    public class LoginDTO
-    {
-        [Required]
-        public string Username { get; set; } = null!;
-
-        [Required] public string Password { get; set; } = null!;
-    }
+    [Required] public string Username { get; set; } = null!;
+    [Required] public string Password { get; set; } = null!;
 }

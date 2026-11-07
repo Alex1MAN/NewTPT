@@ -1,4 +1,4 @@
-"""Independent fixture: pip install numpy openpyxl; python generate_pca_reference.py."""
+"""Независимый эталон PCA для тестов: pip install numpy openpyxl; python generate_pca_reference.py."""
 import json
 from pathlib import Path
 import numpy as np

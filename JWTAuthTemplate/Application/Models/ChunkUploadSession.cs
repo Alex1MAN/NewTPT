@@ -1,6 +1,9 @@
 namespace JWTAuthTemplate.Application.Models;
+
+/// <summary>Сессия загрузки файла по частям (чанкам).</summary>
 public class ChunkUploadSession
 {
+    /// <summary>SHA-256 от пары "бакет + UploadId" — первичный ключ и ключ блокировки.</summary>
     public string Key { get; set; } = "";
     public string BucketName { get; set; } = "";
     public string UploadId { get; set; } = "";
@@ -13,6 +16,8 @@ public class ChunkUploadSession
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public List<UploadPart> Parts { get; set; } = new();
 }
+
+/// <summary>Принятая часть файла в рамках сессии загрузки.</summary>
 public class UploadPart
 {
     public string SessionKey { get; set; } = "";

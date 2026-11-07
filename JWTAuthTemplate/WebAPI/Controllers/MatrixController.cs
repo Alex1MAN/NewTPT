@@ -1,39 +1,20 @@
-﻿using JWTAuthTemplate.Application.Interfaces;
+using JWTAuthTemplate.Application.Interfaces;
+using JWTAuthTemplate.Shared.Dtos;
 using Microsoft.AspNetCore.Mvc;
 
-namespace JWTAuthTemplate.WebAPI.Controllers
+namespace JWTAuthTemplate.WebAPI.Controllers;
+
+/// <summary>Операции с матрицами.</summary>
+[ApiController]
+[Route("TestMatrix")]
+public sealed class MatrixController : BaseController
 {
-    [ApiController]
-    [Route("matrices")]
-    public class MatrixController : BaseController
-    {
-        private readonly IMatrixService _matrixService;
+    private readonly IMatrixService _matrixService;
 
-        public MatrixController(IMatrixService matrixService)
-        {
-            _matrixService = matrixService;
-        }
-        /*
-        [HttpPost("multiply")]
-        public IActionResult MultiplyMatrices([FromBody] MatrixMultiplicationDTO matrices)
-        {
-            var result = _matrixService.Multiply(matrices.MatrixA, matrices.MatrixB);
-            return Ok(result);
-        }
+    public MatrixController(IMatrixService matrixService) => _matrixService = matrixService;
 
-        [HttpPost("add")]
-        public IActionResult AddMatrices([FromBody] MatrixAdditionDTO matrices)
-        {
-            var result = _matrixService.Add(matrices.MatrixA, matrices.MatrixB);
-            return Ok(result);
-        }
-
-        [HttpPost("calculate-determinant")]
-        public IActionResult CalculateDeterminant([FromBody] SquareMatrixDTO matrix)
-        {
-            var determinant = _matrixService.CalculateDeterminant(matrix.Data);
-            return Ok(determinant);
-        }
-        */
-    }
+    [HttpPost("TransposeMatrix")]
+    [HttpPost("/matrices/TransposeMatrix")]
+    public Task<IActionResult> TransposeMatrix([FromBody] TestMatrixDTO matrix)
+        => ExecuteSafeAsync(() => Ok(new { TransposedMatrix = _matrixService.Transpose(matrix.Data) }));
 }

@@ -98,7 +98,7 @@ public class LegacyMigrationTests
         using (var current = Current(db.Connection))
         {
             var guard = Assert.Throws<InvalidOperationException>(() => DatabaseMigrationRunner.Migrate(current));
-            Assert.Contains("MIGRATION_REPAIR.md", guard.Message);
+            Assert.Contains("README.md", guard.Message);
             var ex = await Assert.ThrowsAsync<PostgresException>(() => current.Database.MigrateAsync());
             Assert.Equal("42P07", ex.SqlState);
         }

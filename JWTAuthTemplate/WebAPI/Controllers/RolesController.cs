@@ -1,125 +1,45 @@
-﻿using JWTAuthTemplate.Application.Interfaces;
-using JWTAuthTemplate.Application.Services;
-using JWTAuthTemplate.Models.Identity;
-using Microsoft.AspNetCore.Identity;
+using JWTAuthTemplate.Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
-namespace JWTAuthTemplate.WebAPI.Controllers
+namespace JWTAuthTemplate.WebAPI.Controllers;
+
+/// <summary>Управление ролями и ролями пользователей по ID.</summary>
+[ApiController]
+[Route("roles")]
+public sealed class RolesController : BaseController
 {
-    [ApiController]
-    [Route("roles")]
+    private readonly IRoleService _roleService;
 
-    public class RolesController : BaseController
+    public RolesController(IRoleService roleService) => _roleService = roleService;
+
+    [HttpGet("get-all")]
+    public Task<IActionResult> GetAllRoles() => ExecuteSafeAsync(async () => Ok(await _roleService.GetAllRolesAsync()));
+
+    [HttpPost("create-{roleName}")]
+    public Task<IActionResult> CreateRole(string roleName) => ExecuteSafeAsync(async () =>
+        await _roleService.CreateRoleAsync(roleName)
+            ? CreatedAtAction(nameof(GetAllRoles), null)
+            : Conflict($"Role '{roleName}' already exists."));
+
+    [HttpDelete("delete-{roleName}")]
+    public Task<IActionResult> DeleteRole(string roleName) => ExecuteSafeAsync(async () =>
+        await _roleService.DeleteRoleAsync(roleName) ? NoContent() : NotFound($"Role '{roleName}' does not exist."));
+
+    [HttpPut("assign-user-role/{userId}/{roleName}")]
+    public Task<IActionResult> AssignRoleToUser(Guid userId, string roleName) => ExecuteSafeAsync(async () =>
     {
-        private readonly IRoleService _roleService;
-        private readonly UserManager<ApplicationUser> _userManager;
+        await _roleService.AssignRoleAsync(userId.ToString(), roleName);
+        return Ok(true);
+    });
 
-        public RolesController(IRoleService roleService, UserManager<ApplicationUser> userManager)
-        {
-            _roleService = roleService;
-            _userManager = userManager;
-        }
+    [HttpDelete("remove-user-role/{userId}/{roleName}")]
+    public Task<IActionResult> RemoveRoleFromUser(Guid userId, string roleName) => ExecuteSafeAsync(async () =>
+    {
+        await _roleService.RemoveRoleAsync(userId.ToString(), roleName);
+        return Ok(true);
+    });
 
-        [HttpGet("get-all")]
-        public async Task<ActionResult<IEnumerable<string>>> GetAllRoles()
-        {
-            var roles = await _roleService.GetAllRolesAsync();
-            return Ok(roles);
-        }
-
-        [HttpPost("create-{roleName}")]
-        public async Task<ActionResult> CreateRole(string roleName)
-        {
-            var success = await _roleService.CreateRoleAsync(roleName);
-            if (success)
-            {
-                return CreatedAtAction(nameof(GetAllRoles), null);
-            }
-            return Conflict($"Role '{roleName}' already exists.");
-        }
-
-        [HttpDelete("delete-{roleName}")]
-        public async Task<ActionResult> DeleteRole(string roleName)
-        {
-            var success = await _roleService.DeleteRoleAsync(roleName);
-            if (success)
-            {
-                return NoContent();
-            }
-            return NotFound($"Role '{roleName}' does not exist.");
-        }
-
-
-
-        [HttpPut("assign-user-role/{userId}/{roleName}")]
-        public async Task<ActionResult> AssignRoleToUserAsync(Guid userId, string roleName)
-        {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
-            if (user == null)
-            {
-                return NotFound("User not found.");
-            }
-
-            bool roleExist = await _roleService.CheckRoleExist(roleName);
-            if (!roleExist)
-            {
-                return NotFound("Role not found.");
-            }
-
-            bool roleAssignedBefore = await _roleService.CheckUserInRoleAsync(user, roleName);
-            if (roleAssignedBefore)
-            {
-                return Conflict($"Role '{roleName}' assigned before.");
-            }
-
-            var success = await _roleService.AssignRoleToUserAsync(user, roleName);
-            if (success)
-            {
-                return Ok(true);
-            }
-            return BadRequest($"Error in assigning role '{roleName}'.");
-        }
-
-        [HttpDelete("remove-user-role/{userId}/{roleName}")]
-        public async Task<ActionResult> RemoveRoleFromUserAsync(Guid userId, string roleName)
-        {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
-            if (user == null)
-            {
-                return NotFound("User not found.");
-            }
-
-            bool roleExist = await _roleService.CheckRoleExist(roleName);
-            if (!roleExist)
-            {
-                return NotFound("Role not found.");
-            }
-
-            bool roleAssignedBefore = await _roleService.CheckUserInRoleAsync(user, roleName);
-            if (!roleAssignedBefore)
-            {
-                return Conflict($"Role '{roleName}' deleted before.");
-            }
-
-            var success = await _roleService.RemoveRoleFromUserAsync(user, roleName);
-            if (success)
-            {
-                return Ok(true);
-            }
-            return BadRequest($"Error in deleting role '{roleName}'.");
-        }
-
-        [HttpGet("user-roles/{userId}")]
-        public async Task<ActionResult<IEnumerable<string>>> GetUserRolesAsync(Guid userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
-            if (user == null)
-            {
-                return NotFound("User not found.");
-            }
-
-            var roles = await _roleService.GetUserRolesAsync(user);
-            return Ok(roles);
-        }
-    }
+    [HttpGet("user-roles/{userId}")]
+    public Task<IActionResult> GetUserRoles(Guid userId)
+        => ExecuteSafeAsync(async () => Ok(await _roleService.GetUserRolesAsync(userId.ToString())));
 }

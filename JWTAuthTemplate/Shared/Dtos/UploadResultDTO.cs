@@ -1,19 +1,14 @@
 namespace JWTAuthTemplate.Shared.Dtos;
 
+/// <summary>Результат загрузки нескольких файлов.</summary>
 public class UploadResultDTO
 {
-    /// <summary>
-    /// Количество успешно обработанных файлов
-    /// </summary>
+    /// <summary>Количество успешно обработанных файлов.</summary>
     public int Count { get; set; }
 
-    /// <summary>
-    /// Имя бакета (обычно это userId)
-    /// </summary>
+    /// <summary>Имя бакета (обычно это userId).</summary>
     public string BucketName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Список загруженных документов
-    /// </summary>
+    /// <summary>Список загруженных документов.</summary>
     public List<FileReferenceDTO> References { get; set; } = new();
 }

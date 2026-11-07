@@ -1,5 +1,6 @@
 namespace JWTAuthTemplate.Shared.Dtos;
 
+/// <summary>Метаданные одной части файла.</summary>
 public class UploadChunkRequest
 {
     public string UploadId { get; set; } = string.Empty;

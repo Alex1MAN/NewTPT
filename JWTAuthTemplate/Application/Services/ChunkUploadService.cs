@@ -1,15 +1,17 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using JWTAuthTemplate.Application.Exceptions;
 using JWTAuthTemplate.Application.Interfaces;
 using JWTAuthTemplate.Application.Models;
 using JWTAuthTemplate.Shared.Dtos;
 namespace JWTAuthTemplate.Application.Services;
 
-public sealed class UploadConflictException : Exception
-{
-    public UploadConflictException(string message) : base(message) { }
-}
+/// <summary>
+/// Загрузка файла по частям: части сохраняются во временные объекты _chunks/{ключ}/{индекс},
+/// при завершении собираются в один объект и регистрируются как документ с первой версией.
+/// Повторы одинаковых частей и повторный CompleteUpload идемпотентны.
+/// </summary>
 public sealed class ChunkUploadService : IChunkUploadService
 {
     public const int MaxChunkBytes = 8 * 1024 * 1024;
@@ -34,7 +36,7 @@ public sealed class ChunkUploadService : IChunkUploadService
     private static void Match(ChunkUploadSession session, string fileName, int count)
     {
         if (session.FileName != fileName || session.TotalChunks != count)
-            throw new UploadConflictException("UploadId already belongs to another file or chunk count.");
+            throw new ConflictException("UploadId already belongs to another file or chunk count.");
     }
     private static string PartName(string key, int index) => $"_chunks/{key}/{index}";
     public async Task UploadChunk(UploadChunkRequest request, Stream chunk, long length, CancellationToken ct = default)
@@ -65,14 +67,14 @@ public sealed class ChunkUploadService : IChunkUploadService
         if (old != null)
         {
             if (old.Length != length || old.Sha256 != hash)
-                throw new UploadConflictException("A different chunk already exists at this index.");
+                throw new ConflictException("A different chunk already exists at this index.");
             return;
         }
-        if (session.Completed) throw new UploadConflictException("Upload already completed.");
+        if (session.Completed) throw new ConflictException("Upload already completed.");
         if (session.Parts.Sum(p => p.Length) + length > MaxFileBytes)
             throw new ArgumentException("File exceeds 10 GiB.");
         using var input = new MemoryStream(bytes, writable: false);
-        await _storage.Put(session.BucketName, PartName(key, request.ChunkIndex), input, length, ct);
+        await _storage.PutAsync(session.BucketName, PartName(key, request.ChunkIndex), input, length, ct);
         session.Parts.Add(new UploadPart { SessionKey = key, ChunkIndex = request.ChunkIndex, Length = length, Sha256 = hash });
         session.UpdatedAt = DateTime.UtcNow;
         await tx.Commit(ct);
@@ -89,11 +91,11 @@ public sealed class ChunkUploadService : IChunkUploadService
             {
                 var parts = session.Parts.OrderBy(p => p.ChunkIndex).ToArray();
                 if (parts.Length != session.TotalChunks || parts.Where((p, i) => p.ChunkIndex != i).Any())
-                    throw new UploadConflictException("Missing chunks. Upload them before CompleteUpload.");
+                    throw new ConflictException("Missing chunks. Upload them before CompleteUpload.");
                 var length = parts.Sum(p => p.Length);
                 using var stream = new OrderedChunkStream(_storage, session.BucketName, key, parts, ct);
-                await _storage.Put(session.BucketName, session.ObjectName, stream, length, ct);
-                session.ETag = await _storage.ETag(session.BucketName, session.ObjectName, ct);
+                await _storage.PutAsync(session.BucketName, session.ObjectName, stream, length, ct);
+                session.ETag = await _storage.GetETagAsync(session.BucketName, session.ObjectName, ct);
                 session.DocumentId = await tx.AddDocument(session, length, session.ETag, ct);
                 session.Completed = true;
                 session.UpdatedAt = DateTime.UtcNow;
@@ -108,11 +110,12 @@ public sealed class ChunkUploadService : IChunkUploadService
         // Повтор CompleteUpload повторяет уборку, но не создаёт второй документ.
         for (int i = 0; i < request.TotalChunks; i++)
         {
-            try { await _storage.Delete(request.BucketName, PartName(key, i), ct); }
+            try { await _storage.DeleteAsync(request.BucketName, PartName(key, i), ct); }
             catch when (!ct.IsCancellationRequested) { /* Без потери квитанции успешной загрузки. */ }
         }
         return response;
     }
+    /// <summary>Поток, последовательно читающий части из хранилища с проверкой длины и SHA-256.</summary>
     private sealed class OrderedChunkStream : Stream
     {
         private readonly IObjectStorage _storage;
@@ -132,7 +135,7 @@ public sealed class ChunkUploadService : IChunkUploadService
             {
                 if (_index == _parts.Length) return 0;
                 var part = _parts[_index++];
-                _current = await _storage.Read(_bucket, PartName(_key, part.ChunkIndex), _ct);
+                _current = await _storage.ReadAllBytesAsync(_bucket, PartName(_key, part.ChunkIndex), MaxChunkBytes, _ct);
                 if (_current.LongLength != part.Length || Convert.ToHexString(SHA256.HashData(_current)) != part.Sha256)
                     throw new IOException("Chunk integrity check failed.");
                 _offset = 0;

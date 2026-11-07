@@ -1,8 +1,10 @@
-﻿using ClosedXML.Excel;
+using ClosedXML.Excel;
+using JWTAuthTemplate.Application.Validation;
 using MathNet.Numerics.LinearAlgebra;
 
-namespace TestPCA;
+namespace JWTAuthTemplate.Infrastructure.Analysis;
 
+/// <summary>Числовая матрица с именами столбцов.</summary>
 public class RawData
 {
     public Matrix<double> Data { get; set; } = Matrix<double>.Build.Dense(0, 0);
@@ -11,14 +13,9 @@ public class RawData
     public int ColumnCount => Data.ColumnCount;
 }
 
+/// <summary>Чтение числовых данных из Excel и стандартизация для PCA.</summary>
 public class DataProcessor
 {
-    public RawData LoadDataFromExcel(string filePath)
-    {
-        using var stream = File.OpenRead(filePath);
-        return LoadDataFromExcel(stream);
-    }
-
     public RawData LoadDataFromExcel(Stream stream)
     {
         using var workbook = new XLWorkbook(stream);
@@ -30,8 +27,7 @@ public class DataProcessor
             throw new InvalidOperationException("Лист Excel пуст.");
 
         int cols = lastColumn.ColumnNumber();
-        if (cols > 1024 || lastRow.RowNumber() - firstRow.RowNumber() > 100000 ||
-            (long)cols * (lastRow.RowNumber() - firstRow.RowNumber()) > 2_000_000)
+        if (AnalysisLimits.Exceeded(lastRow.RowNumber() - firstRow.RowNumber(), cols))
             throw new ArgumentException("Excel exceeds analysis limits.");
         var names = new string[cols];
         for (int j = 0; j < cols; j++)
@@ -55,6 +51,7 @@ public class DataProcessor
                 }
                 values[j] = value;
             }
+            // Строки с пустыми или нечисловыми ячейками пропускаются.
             if (valid) rows.Add(values);
         }
         if (rows.Count == 0)
@@ -77,7 +74,7 @@ public class DataProcessor
         var result = Matrix<double>.Build.Dense(rows, cols);
         for (int j = 0; j < cols; j++)
         {
-            // Защита постоянных столбцов от погрешности суммирования.
+            // Постоянный столбец обрабатываем отдельно, чтобы погрешность суммирования не дала ненулевое СКО.
             bool constant = true;
             for (int i = 0; i < rows; i++)
             {
@@ -91,11 +88,7 @@ public class DataProcessor
                 continue;
             }
             for (int i = 0; i < rows; i++)
-            {
-                if (!double.IsFinite(data[i, j]))
-                    throw new ArgumentException("Данные содержат NaN или бесконечность.");
                 means[j] += data[i, j];
-            }
             means[j] /= rows;
             double sumSq = 0;
             for (int i = 0; i < rows; i++)
