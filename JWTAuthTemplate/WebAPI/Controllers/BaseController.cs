@@ -5,7 +5,10 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace JWTAuthTemplate.WebAPI.Controllers;
 
-/// <summary>Единое преобразование исключений прикладного слоя в HTTP-ответы.</summary>
+/// <summary>
+/// Единое преобразование исключений прикладного слоя в HTTP-ответы. Все ошибки возвращаются в формате
+/// ProblemDetails (RFC 7807): { "status": 400, "title": "...", "detail": "сообщение" }.
+/// </summary>
 public abstract class BaseController : ControllerBase
 {
     private const string InternalError = "Внутренняя ошибка сервера.";
@@ -22,21 +25,21 @@ public abstract class BaseController : ControllerBase
         }
         catch (Exception ex) when (ex is ValidationException or ArgumentException or SecurityTokenException)
         {
-            return BadRequest(ex.Message);
+            return Error(StatusCodes.Status400BadRequest, ex.Message);
         }
         catch (KeyNotFoundException ex)
         {
-            return NotFound(ex.Message);
+            return Error(StatusCodes.Status404NotFound, ex.Message);
         }
         catch (ConflictException ex)
         {
-            return Conflict(ex.Message);
+            return Error(StatusCodes.Status409Conflict, ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || HttpContext?.RequestAborted.IsCancellationRequested != true)
         {
             HttpContext?.RequestServices?.GetService<ILogger<BaseController>>()
                 ?.LogError(ex, "Необработанная ошибка {Method} {Path}", Request.Method, Request.Path);
-            return Problem(statusCode: StatusCodes.Status500InternalServerError, detail: InternalError);
+            return Error(StatusCodes.Status500InternalServerError, InternalError);
         }
     }
 
@@ -44,18 +47,14 @@ public abstract class BaseController : ControllerBase
     protected Task<IActionResult> ExecuteSafeAsync(Func<IActionResult> action)
         => ExecuteSafeAsync(() => Task.FromResult(action()));
 
-    /// <summary>Регистрация: { success: true } или 400 { message }.</summary>
+    /// <summary>Регистрация: { success: true } либо 400 с описанием ошибки Identity.</summary>
     protected Task<IActionResult> ExecuteRegisterSafeAsync(Func<Task<(bool Success, string ErrorMessage)>> action)
         => ExecuteSafeAsync(async () =>
         {
-            try
-            {
-                var (success, error) = await action();
-                return success ? Ok(new { success = true }) : BadRequest(new { message = error });
-            }
-            catch (ValidationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            var (success, error) = await action();
+            return success ? Ok(new { success = true }) : Error(StatusCodes.Status400BadRequest, error);
         });
+
+    /// <summary>Ответ об ошибке в формате ProblemDetails.</summary>
+    protected IActionResult Error(int statusCode, string detail) => Problem(statusCode: statusCode, detail: detail);
 }

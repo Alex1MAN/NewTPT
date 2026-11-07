@@ -7,9 +7,12 @@ namespace JWTAuthTemplate.Application.Interfaces;
 public interface IAnalysisService
 {
     IReadOnlyList<string> GetMethods();
+
+    /// <summary>Анализ матрицы, переданной в запросе; метод выбирается полем Method.</summary>
     object Analyze(AnalysisRequest request);
-    object AnalyzeExcel(FileUpload file, string method, double varianceThreshold);
-    Task<object> AnalyzeStoredExcelAsync(string bucketName, string objectName, string method, double varianceThreshold);
+
+    /// <summary>Анализ таблицы из Excel-файла независимо от его источника (загрузка или хранилище).</summary>
+    Task<object> AnalyzeExcelAsync(ExcelSource source, string method, double varianceThreshold);
 }
 
 /// <summary>Алгоритм анализа; новые методы добавляются регистрацией реализации в DI.</summary>

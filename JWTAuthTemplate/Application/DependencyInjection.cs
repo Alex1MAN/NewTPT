@@ -10,7 +10,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddScoped<IDocumentService, DocumentService>();
-        services.AddScoped<IFileContentService, FileContentService>();
+        services.AddScoped<ITableContentService, TableContentService>();
         services.AddScoped<IChunkUploadService, ChunkUploadService>();
         services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IAnalysisService, AnalysisService>();

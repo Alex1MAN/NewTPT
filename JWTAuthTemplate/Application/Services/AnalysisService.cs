@@ -41,22 +41,23 @@ public sealed class AnalysisService : IAnalysisService
         return algorithm.Analyze(request);
     }
 
-    public object AnalyzeExcel(FileUpload file, string method, double varianceThreshold)
+    public async Task<object> AnalyzeExcelAsync(ExcelSource source, string method, double varianceThreshold)
     {
-        if (file == null || file.Length == 0 || !IsXlsx(file.FileName))
+        if (source == null || !IsXlsx(source.Name))
             throw new ArgumentException("A non-empty .xlsx file is required.");
-        using var stream = file.OpenReadStream();
+        await using var stream = await OpenAsync(source);
         return AnalyzeTable(stream, method, varianceThreshold);
     }
 
-    public async Task<object> AnalyzeStoredExcelAsync(string bucketName, string objectName, string method, double varianceThreshold)
+    /// <summary>Открывает поток Excel из любого поддерживаемого источника; размер объекта хранилища ограничен.</summary>
+    private async Task<Stream> OpenAsync(ExcelSource source) => source switch
     {
-        if (!IsXlsx(objectName))
-            throw new ArgumentException("An .xlsx object is required.");
-        var bytes = await _storage.ReadAllBytesAsync(bucketName, objectName, AnalysisLimits.MaxExcelBytes);
-        using var stream = new MemoryStream(bytes, writable: false);
-        return AnalyzeTable(stream, method, varianceThreshold);
-    }
+        UploadedExcel { File.Length: > 0 } uploaded => uploaded.File.OpenReadStream(),
+        UploadedExcel => throw new ArgumentException("A non-empty .xlsx file is required."),
+        StoredExcel stored => new MemoryStream(
+            await _storage.ReadAllBytesAsync(stored.Bucket, stored.ObjectName, AnalysisLimits.MaxExcelBytes), writable: false),
+        _ => throw new ArgumentException("Unsupported Excel source.")
+    };
 
     private object AnalyzeTable(Stream stream, string method, double varianceThreshold)
     {

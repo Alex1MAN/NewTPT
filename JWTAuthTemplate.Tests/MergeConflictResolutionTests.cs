@@ -12,7 +12,7 @@ using Xunit;
 
 namespace JWTAuthTemplate.Tests;
 
-/// <summary>Контракт BaseController и AuthenticationController после слияния веток.</summary>
+/// <summary>Контракт BaseController и AuthController.</summary>
 public class MergeConflictResolutionTests
 {
     [Fact]
@@ -29,8 +29,7 @@ public class MergeConflictResolutionTests
             .AddSingleton<IAuthenticationService>(authentication.Object)
             .BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
-        var controller = new AuthenticationController(
-            Mock.Of<IUserService>(), Mock.Of<ITokenService>(), Mock.Of<IRoleService>())
+        var controller = new AuthController(Mock.Of<IUserService>(), Mock.Of<ITokenService>())
         {
             ControllerContext = new ControllerContext { HttpContext = context }
         };
@@ -86,11 +85,13 @@ public class MergeConflictResolutionTests
     {
         var controller = new BaseControllerHarness();
 
-        var result = Assert.IsType<ConflictObjectResult>(await controller.RunSafe(
+        var result = Assert.IsType<ObjectResult>(await controller.RunSafe(
             () => Task.FromException<IActionResult>(new ConflictException("chunk conflict"))));
 
         Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
-        Assert.Equal("chunk conflict", result.Value);
+        var problem = Assert.IsType<ProblemDetails>(result.Value);
+        Assert.Equal(StatusCodes.Status409Conflict, problem.Status);
+        Assert.Equal("chunk conflict", problem.Detail);
     }
 
     private sealed class BaseControllerHarness : BaseController

@@ -20,7 +20,7 @@ public interface IRoleService
     /// <summary>Назначает роль. KeyNotFound — нет пользователя/роли, Conflict — роль уже назначена.</summary>
     Task AssignRoleAsync(string userId, string roleName);
 
-    /// <summary>Снимает роль. KeyNotFound — нет пользователя/роли, Conflict — роль не назначена.</summary>
+    /// <summary>Снимает роль. KeyNotFound — нет пользователя/роли или роль не назначена.</summary>
     Task RemoveRoleAsync(string userId, string roleName);
 
     Task<List<string>> GetUserRolesAsync(string userId);

@@ -12,14 +12,14 @@ namespace JWTAuthTemplate.Tests;
 public class PcaDatasetTests
 {
     [Fact]
-    public void SuppliedNiCu100AgreesWithIndependentNumpyReference()
+    public async Task SuppliedNiCu100AgreesWithIndependentNumpyReference()
     {
         string root = Path.Combine(AppContext.BaseDirectory, "Fixtures");
         using var expected = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "NiCu100.numpy.json")));
         string path = Path.Combine(root, "NiCu100.xlsx");
         var file = new FileUpload("NiCu100.xlsx", new FileInfo(path).Length, () => File.OpenRead(path));
-        var result = (PcaResult)new AnalysisService(new[] { new PcaAnalysisAlgorithm() }, new ExcelAnalysisDataReader(), Mock.Of<IObjectStorage>())
-            .AnalyzeExcel(file, "PCA", 0.95);
+        var result = (PcaResult)await new AnalysisService(new[] { new PcaAnalysisAlgorithm() }, new ExcelAnalysisDataReader(), Mock.Of<IObjectStorage>())
+            .AnalyzeExcelAsync(new UploadedExcel(file), "PCA", 0.95);
         Assert.Equal(expected.RootElement.GetProperty("rowCount").GetInt32(), result.RowCount);
         Assert.Equal(expected.RootElement.GetProperty("columnCount").GetInt32(), result.ComponentsCount);
         var ratios = expected.RootElement.GetProperty("ratios").EnumerateArray().Select(v => v.GetDouble()).ToArray();

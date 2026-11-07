@@ -2,7 +2,7 @@ using JWTAuthTemplate.Application.Models;
 
 namespace JWTAuthTemplate.Application.Interfaces;
 
-/// <summary>Порт хранилища документов, версий и legacy-ссылок на файлы.</summary>
+/// <summary>Порт хранилища документов и их версий.</summary>
 public interface IDocumentRepository
 {
     Task<bool> UserExistsAsync(string userId);
@@ -17,9 +17,6 @@ public interface IDocumentRepository
     Task<DocumentVersion> AddVersionAsync(Document document, int versionNumber, string objectName,
         string etag, long fileSize, string fileName);
 
-    /// <summary>Добавляет legacy-ссылку UserReferencesInMinio для загруженного документа.</summary>
-    Task AddLegacyReferenceAsync(Document document, string etag);
-
     Task<List<Document>> GetDocumentsByUserAsync(string userId);
     Task<Document?> GetDocumentAsync(int documentId, bool includeVersions = false);
     Task<List<DocumentVersion>> GetVersionsAsync(int documentId);
@@ -31,9 +28,6 @@ public interface IDocumentRepository
 
     /// <summary>Удаляет версию; если она текущая, текущей становится предыдущая.</summary>
     Task DeleteVersionAsync(DocumentVersion version);
-
-    Task AddReferenceAsync(UserReferencesInMinio reference);
-    Task<List<UserReferencesInMinio>> GetReferencesAsync(string userId);
 }
 
 /// <summary>Транзакция, которую нужно явно подтвердить.</summary>

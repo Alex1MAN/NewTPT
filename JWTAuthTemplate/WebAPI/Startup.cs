@@ -3,6 +3,7 @@ using JWTAuthTemplate.Infrastructure;
 using JWTAuthTemplate.Infrastructure.Database;
 using JWTAuthTemplate.WebAPI.Filters;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -27,7 +28,12 @@ public class Startup
         builder.Services.AddApplication();
         builder.Services.AddInfrastructure(config);
 
-        builder.Services.AddControllers(options => options.Filters.Add<SuccessResponseFilter>());
+        builder.Services.AddControllers(options =>
+        {
+            options.Filters.Add<SuccessResponseFilter>();
+            // API отвечает только JSON (ошибки — application/problem+json) и файлами; текстовые ответы не используются.
+            options.OutputFormatters.RemoveType<StringOutputFormatter>();
+        });
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddHttpContextAccessor();
 
@@ -74,6 +80,10 @@ public class Startup
     {
         c.SwaggerDoc("v1", new OpenApiInfo { Title = "JWTAuthTemplate", Version = "v1" });
         c.MapType<IFormFile>(() => new OpenApiSchema { Type = "string", Format = "binary" });
+        // Описания эндпоинтов берутся из XML-комментариев контроллеров (см. GenerateDocumentationFile в .csproj).
+        var xmlPath = Path.Combine(AppContext.BaseDirectory, typeof(Startup).Assembly.GetName().Name + ".xml");
+        if (File.Exists(xmlPath))
+            c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
         c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
             In = ParameterLocation.Header,

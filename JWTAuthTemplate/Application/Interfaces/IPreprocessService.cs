@@ -5,5 +5,5 @@ namespace JWTAuthTemplate.Application.Interfaces;
 /// <summary>Предобработка данных (масштабирование, нормализация).</summary>
 public interface IPreprocessService
 {
-    OutputModel ProcessData(InputModel input);
+    PreprocessResult ProcessData(PreprocessRequest input);
 }

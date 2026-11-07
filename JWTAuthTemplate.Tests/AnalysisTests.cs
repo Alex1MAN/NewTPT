@@ -80,7 +80,7 @@ public class AnalysisTests
         public object Analyze(AnalysisRequest request) => "extended";
     }
     [Fact]
-    public void ExcelMatchesMatrixAndSkipsIncompleteRows()
+    public async Task ExcelMatchesMatrixAndSkipsIncompleteRows()
     {
         using var workbook = new XLWorkbook();
         var sheet = workbook.AddWorksheet("Data");
@@ -91,10 +91,20 @@ public class AnalysisTests
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         var bytes = stream.ToArray();
-        var result = (PcaResult)Service().AnalyzeExcel(new FileUpload("data.xlsx", bytes.Length, () => new MemoryStream(bytes)), "PCA", 0.95);
+        var result = (PcaResult)await Service().AnalyzeExcelAsync(new UploadedExcel(new FileUpload("data.xlsx", bytes.Length, () => new MemoryStream(bytes))), "PCA", 0.95);
         Assert.Equal(3, result.RowCount);
         Assert.Equal(new[] { "A", "B" }, result.ColumnNames);
         Assert.Equal(1, result.ExplainedVarianceRatio[0], 12);
+
+        // Тот же файл из хранилища даёт тот же результат: источник не влияет на алгоритм.
+        var storage = new Mock<IObjectStorage>();
+        storage.Setup(s => s.ReadAllBytesAsync("u", "u/1/v1_data.xlsx", It.IsAny<long?>(), It.IsAny<CancellationToken>())).ReturnsAsync(bytes);
+        var stored = (PcaResult)await new AnalysisService(new[] { new PcaAnalysisAlgorithm() }, new ExcelAnalysisDataReader(), storage.Object)
+            .AnalyzeExcelAsync(new StoredExcel("u", "u/1/v1_data.xlsx"), "PCA", 0.95);
+        Assert.Equal(result.Scores.Select(r => r[0]), stored.Scores.Select(r => r[0]));
+        await Assert.ThrowsAsync<ArgumentException>(() => Service().AnalyzeExcelAsync(new StoredExcel("u", "data.csv"), "PCA", 0.95));
+        await Assert.ThrowsAsync<ArgumentException>(() => Service().AnalyzeExcelAsync(
+            new UploadedExcel(new FileUpload("data.xlsx", 0, () => Stream.Null)), "PCA", 0.95));
     }
     [Fact]
     public void MatrixTransposeAndInvalidInput()
@@ -106,10 +116,10 @@ public class AnalysisTests
     [Fact]
     public void PreprocessPreservesPopulationScalingAndOrder()
     {
-        var input = new InputModel
+        var input = new PreprocessRequest
         {
-            Data = new DataModel { Datax = new() { 1, 2, 3 }, Datay = new() { 3, 4 } },
-            Params = new ParamsModel { PrepX = new() { "scaling", "normalization" }, PrepY = new() { "normalization" } }
+            Data = new PreprocessSeries { Datax = new() { 1, 2, 3 }, Datay = new() { 3, 4 } },
+            Params = new PreprocessParams { PrepX = new() { "scaling", "normalization" }, PrepY = new() { "normalization" } }
         };
         var result = new PreprocessService().ProcessData(input);
         Assert.Equal(-1 / Math.Sqrt(2), result.Datax[0], 12);
@@ -119,7 +129,7 @@ public class AnalysisTests
     [Fact]
     public void PreprocessZeroConstantAndExtremeValues()
     {
-        var result = new PreprocessService().ProcessData(new InputModel
+        var result = new PreprocessService().ProcessData(new PreprocessRequest
         {
             Data = new() { Datax = new() { 7, 7 }, Datay = new() { 1e300, 1e300 } },
             Params = new() { PrepX = new() { "scaling" }, PrepY = new() { "normalization" } }
@@ -130,8 +140,8 @@ public class AnalysisTests
     [Fact]
     public void PreprocessInvalidInputsRejected()
     {
-        Assert.Throws<ArgumentException>(() => new PreprocessService().ProcessData(new InputModel()));
-        Assert.Throws<ArgumentException>(() => new PreprocessService().ProcessData(new InputModel {
+        Assert.Throws<ArgumentException>(() => new PreprocessService().ProcessData(new PreprocessRequest()));
+        Assert.Throws<ArgumentException>(() => new PreprocessService().ProcessData(new PreprocessRequest {
             Data = new() { Datax = new() { 1 }, Datay = new() { 2 } }, Params = new() { PrepX = new() { "unknown" } } }));
     }
 }

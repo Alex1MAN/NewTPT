@@ -72,7 +72,4 @@ public sealed class UserService : IUserService
             CreateDate = u.CreateDate,
             Roles = u.Roles.Select(r => new UserRoleDTO { Role = new RoleDTO { Id = r.Role!.Id, Name = r.Role.Name! } }).ToList()
         }).FirstOrDefaultAsync();
-
-    public async Task<string> GetIdByUsernameAsync(string username)
-        => (await _userManager.FindByNameAsync(username))?.Id ?? throw new KeyNotFoundException("User not found.");
 }

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace JWTAuthTemplate.Application.Services;
 
-/// <summary>Сценарии работы с документами, версиями и файлами в объектном хранилище.</summary>
+/// <summary>Сценарии работы с документами и их версиями; содержимое хранится в объектном хранилище.</summary>
 public sealed class DocumentService : IDocumentService
 {
     private readonly IDocumentRepository _repository;
@@ -16,23 +16,22 @@ public sealed class DocumentService : IDocumentService
     public DocumentService(IDocumentRepository repository, IObjectStorage storage, ILogger<DocumentService> logger)
         => (_repository, _storage, _logger) = (repository, storage, logger);
 
-    public Task CreateBucketAsync(string bucketName) => _storage.EnsureBucketAsync(bucketName);
-
-    public async Task<UploadResultDTO> UploadFilesAsync(string bucketName, IReadOnlyList<FileUpload> files)
+    public async Task<UploadResultDTO> UploadFilesAsync(string userId, IReadOnlyList<FileUpload> files, bool allowDuplicateNames = false)
     {
-        if (string.IsNullOrWhiteSpace(bucketName) || files == null || files.Count == 0 ||
+        if (string.IsNullOrWhiteSpace(userId) || files == null || files.Count == 0 ||
             files.Any(f => f == null || f.Length == 0))
             throw new ArgumentException("No files provided for upload");
-        if (!await _repository.UserExistsAsync(bucketName))
+        if (!await _repository.UserExistsAsync(userId))
             throw new KeyNotFoundException("User not found.");
+        if (!allowDuplicateNames)
+            await EnsureUniqueNamesAsync(userId, files.Select(f => f.FileName).ToList());
 
-        var result = new UploadResultDTO { BucketName = bucketName };
+        var result = new UploadResultDTO { BucketName = userId };
         await using var transaction = await _repository.BeginTransactionAsync();
         foreach (var file in files)
         {
-            var document = await _repository.AddDocumentAsync(bucketName, file.FileName);
+            var document = await _repository.AddDocumentAsync(userId, file.FileName);
             var version = await StoreVersionAsync(document, 1, file);
-            await _repository.AddLegacyReferenceAsync(document, version.ETag);
             result.References.Add(ToDto(document, version));
         }
         result.Count = result.References.Count;
@@ -40,20 +39,13 @@ public sealed class DocumentService : IDocumentService
         return result;
     }
 
-    public async Task EnsureUniqueFilesAsync(string bucketName, IReadOnlyList<string> fileNames)
+    /// <summary>Имена не должны повторяться ни между собой, ни с существующими документами пользователя.</summary>
+    private async Task EnsureUniqueNamesAsync(string userId, IReadOnlyList<string> fileNames)
     {
-        var names = (await _repository.GetDocumentsByUserAsync(bucketName))
+        var names = (await _repository.GetDocumentsByUserAsync(userId))
             .Select(d => d.OriginalName).ToHashSet(StringComparer.Ordinal);
         if (fileNames.Any(n => !names.Add(n)))
             throw new ConflictException("File already exists. Rename the file or create a new version.");
-    }
-
-    public async Task PutObjectAsync(string bucketName, string objectName, FileUpload file)
-    {
-        if (file == null || file.Length == 0)
-            throw new ArgumentException("File is required.");
-        await using var stream = file.OpenReadStream();
-        await _storage.PutAsync(bucketName, objectName, stream, file.Length);
     }
 
     public async Task<List<FileReferenceDTO>> GetDocumentsAsync(string userId)
@@ -103,25 +95,9 @@ public sealed class DocumentService : IDocumentService
     public async Task<(Stream Content, string FileName)> OpenVersionAsync(int versionId)
     {
         var version = await FindVersionAsync(versionId);
-        return (await OpenObjectAsync(version.Document.UserId, version.MinioObjectName), version.OriginalFileName);
+        var bytes = await _storage.ReadAllBytesAsync(version.Document.UserId, version.MinioObjectName);
+        return (new MemoryStream(bytes, writable: false), version.OriginalFileName);
     }
-
-    public async Task<Stream> OpenObjectAsync(string bucketName, string objectName)
-        => new MemoryStream(await _storage.ReadAllBytesAsync(bucketName, objectName), writable: false);
-
-    public Task<string> GetObjectUrlAsync(string bucketName, string objectName)
-        => _storage.GetPresignedUrlAsync(bucketName, objectName);
-
-    public Task AddReferenceAsync(UserReferencesInMinio reference)
-    {
-        if (string.IsNullOrWhiteSpace(reference.UserId) || string.IsNullOrWhiteSpace(reference.FileName) ||
-            string.IsNullOrWhiteSpace(reference.FileReferenceMinio))
-            throw new ArgumentException("UserId, FileName and FileReferenceMinio are required.");
-        reference.Id = 0;
-        return _repository.AddReferenceAsync(reference);
-    }
-
-    public Task<List<UserReferencesInMinio>> GetReferencesAsync(string userId) => _repository.GetReferencesAsync(userId);
 
     /// <summary>Кладёт файл в MinIO по пути {userId}/{documentId}/v{N}_{имя} и сохраняет версию.</summary>
     private async Task<DocumentVersion> StoreVersionAsync(Document document, int number, FileUpload file)

@@ -103,7 +103,7 @@ public sealed class ChunkUploadService : IChunkUploadService
             }
             response = new CompleteUploadResponse
             {
-                Success = true, FileName = session.FileName, FileReferenceMinio = session.ETag,
+                FileName = session.FileName, FileReferenceMinio = session.ETag,
                 DocumentId = session.DocumentId!.Value, MinioObjectName = session.ObjectName
             };
         }

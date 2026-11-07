@@ -8,7 +8,7 @@ namespace JWTAuthTemplate.Infrastructure.Database
     {
         public Context(DbContextOptions<Context> options) : base(options) { }
 
-        // Таблица ссылок из master-версии — сохраняется для совместимости со старым клиентом
+        // Историческая таблица ссылок master-версии: схема сохранена ради данных, API её больше не пишет и не читает
         public DbSet<UserReferencesInMinio> UserReferencesInMinio { get; set; }
 
         // Новые таблицы для системы версионности

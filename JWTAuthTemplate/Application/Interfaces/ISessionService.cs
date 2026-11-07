@@ -2,17 +2,18 @@ using JWTAuthTemplate.Shared.Dtos;
 
 namespace JWTAuthTemplate.Application.Interfaces;
 
-/// <summary>Статусы пользовательских сессий (общая логика для /sessions и /User).</summary>
+/// <summary>Статусы пользовательских сессий.</summary>
 public interface ISessionService
 {
+    /// <summary>Сохраняет статус; из параметров извлекаются fileName и fileExtension для фильтрации.</summary>
     Task<int> SaveStatusAsync(string userId, Dictionary<string, object> statusParams);
-    Task<UserSessionStatusDTO?> GetLatestAsync(string userId);
-    Task<List<UserSessionStatusDTO>> GetAllByFileAsync(string userId, string fileName, string fileExtension);
-    Task<UserSessionStatusDTO?> GetLatestByFileAsync(string userId, string fileName, string fileExtension);
 
-    /// <summary>Последний статус файла не позже указанного момента (UTC).</summary>
-    Task<UserSessionStatusDTO?> GetLatestByFileAsOfAsync(string userId, string fileName, string fileExtension, DateTime asOfUtc);
+    /// <summary>
+    /// Последний статус пользователя: по всем файлам, по конкретному файлу (fileName + fileExtension)
+    /// и, при необходимости, не позже момента <paramref name="asOfUtc"/>.
+    /// </summary>
+    Task<UserSessionStatusDTO?> GetLatestAsync(string userId, string? fileName = null, string? fileExtension = null, DateTime? asOfUtc = null);
 
-    /// <summary>Первый статус файла не раньше указанного момента (UTC) — семантика master-версии.</summary>
-    Task<UserSessionStatusDTO?> GetFirstByFileSinceAsync(string userId, string fileName, string fileExtension, DateTime sinceUtc);
+    /// <summary>Все статусы файла, от новых к старым.</summary>
+    Task<List<UserSessionStatusDTO>> GetByFileAsync(string userId, string fileName, string fileExtension);
 }

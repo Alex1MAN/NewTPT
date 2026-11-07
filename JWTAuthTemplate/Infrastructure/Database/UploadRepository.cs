@@ -34,7 +34,6 @@ public sealed class UploadRepository : IUploadRepository
         {
             var document = await DocumentWriter.AddDocumentAsync(_context, session.BucketName, session.FileName, ct);
             await DocumentWriter.AddVersionAsync(_context, document, 1, session.ObjectName, etag, length, session.FileName, ct);
-            DocumentWriter.AddLegacyReference(_context, document, etag);
             return document.Id;
         }
         public async Task Commit(CancellationToken ct)

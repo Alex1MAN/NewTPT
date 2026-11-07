@@ -1,8 +1,8 @@
 namespace JWTAuthTemplate.Application.Models;
 
 /// <summary>
-/// Ссылка на файл пользователя в MinIO (таблица из master-версии).
-/// Заполняется при каждой загрузке документа для совместимости со старым клиентом.
+/// Ссылка на файл пользователя в MinIO — историческая таблица master-версии.
+/// Сущность сохранена только для схемы БД (миграции) и данных; источник истины — Documents/DocumentVersions.
 /// </summary>
 public class UserReferencesInMinio
 {

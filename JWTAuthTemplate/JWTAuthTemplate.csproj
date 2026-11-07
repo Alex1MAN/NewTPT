@@ -7,6 +7,9 @@
     <UserSecretsId>2e798342-b812-40a7-9cde-aef2dc9e86a4</UserSecretsId>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
     <DockerComposeProjectPath>..\docker-compose.dcproj</DockerComposeProjectPath>
+    <!-- XML-документация нужна Swagger для описаний эндпоинтов; предупреждение 1591 (нет комментария) отключено. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

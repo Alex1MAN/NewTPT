@@ -1,19 +1,33 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+
 namespace JWTAuthTemplate.WebAPI.Filters;
-// Команды -> true; ответы с данными -> { success: true, data: ... }.
+
+/// <summary>
+/// Единый конверт успешных ответов: команды без данных -> true; ответы с данными (200/201) -> { success: true, data: ... }.
+/// Файлы помечаются заголовком X-Success.
+/// </summary>
 public sealed class SuccessResponseFilter : IResultFilter
 {
     public void OnResultExecuting(ResultExecutingContext context)
     {
-        if (context.Result is FileResult) context.HttpContext.Response.Headers["X-Success"] = "true";
-        if (context.Result is OkResult) context.Result = new OkObjectResult(true);
-        else if (context.Result is OkObjectResult ok && ok.Value is not bool)
+        switch (context.Result)
         {
-            bool hasSuccess = ok.Value?.GetType().GetProperties()
-                .Any(p => string.Equals(p.Name, "success", StringComparison.OrdinalIgnoreCase) && p.PropertyType == typeof(bool)) == true;
-            if (!hasSuccess) ok.Value = ok.Value == null ? true : new { success = true, data = ok.Value };
+            case FileResult:
+                context.HttpContext.Response.Headers["X-Success"] = "true";
+                break;
+            case OkResult:
+                context.Result = new OkObjectResult(true);
+                break;
+            case ObjectResult { StatusCode: null or StatusCodes.Status200OK or StatusCodes.Status201Created } result
+                when result.Value is not bool && !HasSuccessFlag(result.Value):
+                result.Value = result.Value == null ? true : new { success = true, data = result.Value };
+                break;
         }
     }
+
     public void OnResultExecuted(ResultExecutedContext context) { }
+
+    private static bool HasSuccessFlag(object? value) => value?.GetType().GetProperties()
+        .Any(p => string.Equals(p.Name, "success", StringComparison.OrdinalIgnoreCase) && p.PropertyType == typeof(bool)) == true;
 }

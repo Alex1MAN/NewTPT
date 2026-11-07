@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace JWTAuthTemplate.Infrastructure.Database;
 
-/// <summary>Хранилище документов, версий и legacy-ссылок в PostgreSQL.</summary>
+/// <summary>Хранилище документов и версий в PostgreSQL.</summary>
 public sealed class DocumentRepository : IDocumentRepository
 {
     private readonly Context _context;
@@ -26,12 +26,6 @@ public sealed class DocumentRepository : IDocumentRepository
         var version = await DocumentWriter.AddVersionAsync(_context, document, versionNumber, objectName, etag, fileSize, fileName);
         await _context.SaveChangesAsync();
         return version;
-    }
-
-    public async Task AddLegacyReferenceAsync(Document document, string etag)
-    {
-        DocumentWriter.AddLegacyReference(_context, document, etag);
-        await _context.SaveChangesAsync();
     }
 
     public Task<List<Document>> GetDocumentsByUserAsync(string userId)
@@ -89,17 +83,6 @@ public sealed class DocumentRepository : IDocumentRepository
         _context.DocumentVersions.Remove(version);
         await _context.SaveChangesAsync();
     }
-
-    public async Task AddReferenceAsync(UserReferencesInMinio reference)
-    {
-        if (!await UserExistsAsync(reference.UserId!))
-            throw new KeyNotFoundException("User not found.");
-        _context.UserReferencesInMinio.Add(reference);
-        await _context.SaveChangesAsync();
-    }
-
-    public Task<List<UserReferencesInMinio>> GetReferencesAsync(string userId)
-        => _context.UserReferencesInMinio.AsNoTracking().Where(r => r.UserId == userId).ToListAsync();
 
     private sealed class UnitOfWork : IUnitOfWork
     {

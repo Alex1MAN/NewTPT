@@ -3,7 +3,7 @@ using JWTAuthTemplate.Application.Models;
 namespace JWTAuthTemplate.Infrastructure.Database;
 
 /// <summary>
-/// Общая запись документа, версии и legacy-ссылки. Используется и обычной загрузкой,
+/// Общая запись документа и версии. Используется и обычной загрузкой,
 /// и загрузкой по частям, чтобы правила создания документа были в одном месте.
 /// </summary>
 internal static class DocumentWriter
@@ -44,13 +44,4 @@ internal static class DocumentWriter
         document.UpdatedAt = version.CreatedAt;
         return version;
     }
-
-    public static void AddLegacyReference(Context context, Document document, string etag)
-        => context.UserReferencesInMinio.Add(new UserReferencesInMinio
-        {
-            UserId = document.UserId,
-            FileName = document.OriginalName,
-            FileExtension = document.FileExtension,
-            FileReferenceMinio = etag
-        });
 }

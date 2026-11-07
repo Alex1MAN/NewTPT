@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace JWTAuthTemplate.Infrastructure.Identity;
 
-/// <summary>Управление ролями через ASP.NET Core Identity; общая логика для /roles и /User.</summary>
+/// <summary>Управление ролями через ASP.NET Core Identity.</summary>
 public sealed class RoleService : IRoleService
 {
     private readonly RoleManager<ApplicationRole> _roleManager;
@@ -31,7 +31,7 @@ public sealed class RoleService : IRoleService
     {
         var user = await FindUserWithRoleAsync(userId, roleName);
         if (await _userManager.IsInRoleAsync(user, roleName))
-            throw new ConflictException($"Role '{roleName}' assigned before.");
+            throw new ConflictException($"User already in role '{roleName}'.");
         EnsureSucceeded(await _userManager.AddToRoleAsync(user, roleName), $"Error in assigning role '{roleName}'.");
     }
 
@@ -39,7 +39,7 @@ public sealed class RoleService : IRoleService
     {
         var user = await FindUserWithRoleAsync(userId, roleName);
         if (!await _userManager.IsInRoleAsync(user, roleName))
-            throw new ConflictException($"Role '{roleName}' deleted before.");
+            throw new KeyNotFoundException($"User is not in role '{roleName}'.");
         EnsureSucceeded(await _userManager.RemoveFromRoleAsync(user, roleName), $"Error in deleting role '{roleName}'.");
     }
 

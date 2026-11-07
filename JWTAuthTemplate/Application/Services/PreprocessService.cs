@@ -3,10 +3,10 @@ using JWTAuthTemplate.Shared.Dtos;
 namespace JWTAuthTemplate.Application.Services;
 public sealed class PreprocessService : IPreprocessService
 {
-    public OutputModel ProcessData(InputModel input)
+    public PreprocessResult ProcessData(PreprocessRequest input)
     {
         if (input?.Data == null) throw new ArgumentException("Invalid input data.");
-        return new OutputModel
+        return new PreprocessResult
         {
             Datax = Process(input.Data.Datax, input.Params?.PrepX),
             Datay = Process(input.Data.Datay, input.Params?.PrepY)

@@ -37,8 +37,7 @@ public class LegacyMigrationTests
         private TestDatabase(string admin, string name, string connection) => (_admin, _name, Connection) = (admin, name, connection);
         public static async Task<TestDatabase> Create()
         {
-            var b = new NpgsqlConnectionStringBuilder(Environment.GetEnvironmentVariable("NEWTPT_TEST_DB") ??
-                "Host=localhost;Database=JWTAuthTemplate;Username=postgres;Password=root");
+            var b = new NpgsqlConnectionStringBuilder(IntegrationStack.Connection);
             b.Database = "postgres"; b.Pooling = false;
             var admin = b.ConnectionString;
             string name = "newtpt_legacy_test_" + Guid.NewGuid().ToString("N");

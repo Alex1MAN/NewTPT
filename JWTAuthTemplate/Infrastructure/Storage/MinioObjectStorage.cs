@@ -2,6 +2,7 @@ using JWTAuthTemplate.Application.Interfaces;
 using Microsoft.Extensions.Options;
 using Minio;
 using Minio.DataModel.Args;
+using Minio.Exceptions;
 
 namespace JWTAuthTemplate.Infrastructure.Storage;
 
@@ -26,6 +27,19 @@ public sealed class MinioObjectStorage : IObjectStorage
             .WithStreamData(data).WithObjectSize(length).WithContentType("application/octet-stream"), ct);
 
     public async Task<byte[]> ReadAllBytesAsync(string bucket, string objectName, long? maxBytes = null, CancellationToken ct = default)
+    {
+        try
+        {
+            return await ReadAsync(bucket, objectName, maxBytes, ct);
+        }
+        catch (Exception ex) when (ex is ObjectNotFoundException or BucketNotFoundException)
+        {
+            // Исключения SDK переводятся в исключение прикладного слоя (в API — 404).
+            throw new KeyNotFoundException($"Object '{objectName}' not found in bucket '{bucket}'.", ex);
+        }
+    }
+
+    private async Task<byte[]> ReadAsync(string bucket, string objectName, long? maxBytes, CancellationToken ct)
     {
         if (maxBytes.HasValue)
         {

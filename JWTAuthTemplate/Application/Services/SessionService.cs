@@ -5,8 +5,7 @@ using JWTAuthTemplate.Shared.Dtos;
 namespace JWTAuthTemplate.Application.Services;
 
 /// <summary>
-/// Статусы пользовательских сессий. Один сервис обслуживает и /sessions (пользователь из токена),
-/// и legacy-маршруты /User (пользователь из параметра userId).
+/// Статусы пользовательских сессий (пользователь определяется по токену в контроллере).
 /// </summary>
 public sealed class SessionService : ISessionService
 {
@@ -29,31 +28,20 @@ public sealed class SessionService : ISessionService
         });
     }
 
-    public async Task<UserSessionStatusDTO?> GetLatestAsync(string userId)
-        => ToDto(await _repository.GetLatestAsync(userId));
-
-    public async Task<List<UserSessionStatusDTO>> GetAllByFileAsync(string userId, string fileName, string fileExtension)
+    public async Task<UserSessionStatusDTO?> GetLatestAsync(string userId, string? fileName = null, string? fileExtension = null, DateTime? asOfUtc = null)
     {
-        ValidateFile(fileName, fileExtension);
-        return (await _repository.GetByFileAsync(userId, fileName, fileExtension)).Select(s => ToDto(s)!).ToList();
-    }
-
-    public async Task<UserSessionStatusDTO?> GetLatestByFileAsync(string userId, string fileName, string fileExtension)
-    {
-        ValidateFile(fileName, fileExtension);
-        return ToDto(await _repository.GetLatestAsync(userId, fileName, fileExtension));
-    }
-
-    public async Task<UserSessionStatusDTO?> GetLatestByFileAsOfAsync(string userId, string fileName, string fileExtension, DateTime asOfUtc)
-    {
-        ValidateFile(fileName, fileExtension);
+        bool byFile = fileName != null || fileExtension != null;
+        if (byFile)
+            ValidateFile(fileName, fileExtension);
+        if (asOfUtc.HasValue && !byFile)
+            throw new ArgumentException("Parameters 'fileName' and 'fileExtension' are required together with 'asOf'");
         return ToDto(await _repository.GetLatestAsync(userId, fileName, fileExtension, asOfUtc));
     }
 
-    public async Task<UserSessionStatusDTO?> GetFirstByFileSinceAsync(string userId, string fileName, string fileExtension, DateTime sinceUtc)
+    public async Task<List<UserSessionStatusDTO>> GetByFileAsync(string userId, string fileName, string fileExtension)
     {
         ValidateFile(fileName, fileExtension);
-        return ToDto(await _repository.GetFirstSinceAsync(userId, fileName, fileExtension, sinceUtc));
+        return (await _repository.GetByFileAsync(userId, fileName, fileExtension)).Select(s => ToDto(s)!).ToList();
     }
 
     private async Task EnsureUserAsync(string userId)
@@ -62,7 +50,7 @@ public sealed class SessionService : ISessionService
             throw new KeyNotFoundException("User not found.");
     }
 
-    private static void ValidateFile(string fileName, string fileExtension)
+    private static void ValidateFile(string? fileName, string? fileExtension)
     {
         if (string.IsNullOrWhiteSpace(fileName))
             throw new ArgumentException("Parameter 'fileName' is required");
@@ -84,7 +72,6 @@ public sealed class SessionService : ISessionService
         Id = s.Id,
         UserId = s.UserId,
         ActualAt = s.ActualAt,
-        StatusParams = s.StatusParams,
         StatusParamsDict = s.StatusParamsDict,
         FileName = s.FileName,
         FileExtension = s.FileExtension

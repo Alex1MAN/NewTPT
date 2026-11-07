@@ -46,7 +46,7 @@ public class ChunkUploadTests
         await Upload(1, new byte[] { 3, 4 });
         await Upload(0, new byte[] { 1, 2 });
         var result = await _service.CompleteUpload(Complete());
-        Assert.True(result.Success);
+        Assert.Equal("test.bin", result.FileName);
         Assert.Equal(new byte[] { 1, 2, 3, 4 }, _objects[result.MinioObjectName]);
         Assert.Equal(42, (await _service.CompleteUpload(Complete())).DocumentId);
         _tx.Verify(t => t.AddDocument(It.IsAny<ChunkUploadSession>(), 4, "etag", It.IsAny<CancellationToken>()), Times.Once);
@@ -72,7 +72,7 @@ public class ChunkUploadTests
         await Assert.ThrowsAsync<ConflictException>(() => _service.CompleteUpload(Complete()));
         Assert.False(_session!.Completed);
         await Upload(1, new byte[] { 2 });
-        Assert.True((await _service.CompleteUpload(Complete())).Success);
+        Assert.NotEmpty((await _service.CompleteUpload(Complete())).MinioObjectName);
     }
     [Fact]
     public async Task MismatchedMetadataRejected()
@@ -133,7 +133,7 @@ public class ChunkUploadTests
     {
         await Upload(0, new byte[] { 1 }, 1);
         _storage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("offline"));
-        Assert.True((await _service.CompleteUpload(Complete(1))).Success);
-        Assert.True((await _service.CompleteUpload(Complete(1))).Success);
+        Assert.NotEmpty((await _service.CompleteUpload(Complete(1))).MinioObjectName);
+        Assert.NotEmpty((await _service.CompleteUpload(Complete(1))).MinioObjectName);
     }
 }
