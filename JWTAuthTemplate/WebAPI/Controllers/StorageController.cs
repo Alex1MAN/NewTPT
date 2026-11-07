@@ -29,6 +29,28 @@ public sealed class StorageController : BaseController
         return NoContent();
     });
 
+    /// <summary>Загрузка объекта в бакет без создания документа.</summary>
+    /// <remarks>Низкоуровневая операция: файл сохраняется под указанным именем; существующий объект перезаписывается.
+    /// Для пользовательских файлов с версиями используйте POST /users/{userId}/documents.</remarks>
+    /// <param name="bucket">Имя бакета (должен существовать).</param>
+    /// <param name="objectName">Полное имя объекта.</param>
+    /// <param name="file">Содержимое (поле формы file).</param>
+    /// <response code="204">Объект сохранён.</response>
+    /// <response code="400">Файл не передан или пуст.</response>
+    /// <response code="404">Бакет не найден.</response>
+    [HttpPut("{bucket}/objects/{*objectName}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<IActionResult> UploadObject(string bucket, string objectName, IFormFile? file) => ExecuteSafeAsync(async () =>
+    {
+        if (file is null || file.Length == 0)
+            throw new ArgumentException("File is required.");
+        using var stream = file.OpenReadStream();
+        await _storage.PutAsync(bucket, objectName, stream, file.Length);
+        return NoContent();
+    });
+
     /// <summary>Скачивание объекта из бакета.</summary>
     /// <param name="bucket">Имя бакета.</param>
     /// <param name="objectName">Полное имя объекта, например {userId}/{documentId}/v1_report.xlsx.</param>

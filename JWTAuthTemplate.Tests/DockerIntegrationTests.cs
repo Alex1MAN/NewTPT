@@ -175,6 +175,14 @@ public class DockerIntegrationTests
         Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/api/v1/sessions/statuses/latest?asOf=2026-01-01T00:00:00Z")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/api/v1/sessions/statuses/latest?fileName=x&fileExtension=xlsx&asOf=bad")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync("/api/v1/sessions/statuses/latest?fileName=x&fileExtension=xlsx&asOf=2000-01-01T00:00:00Z")).StatusCode);
+        // Первый статус не раньше момента: граница включается, более ранний статус не возвращается.
+        var sinceSecond = Uri.EscapeDataString(statuses[0].GetProperty("actualAt").GetDateTime().ToString("O"));
+        var firstSince = await Data(await _client.GetAsync($"/api/v1/sessions/statuses/first?fileName=x&fileExtension=xlsx&since={sinceSecond}"));
+        Assert.Equal(2, firstSince.GetProperty("statusParamsDict").GetProperty("step").GetInt32());
+        var firstEver = await Data(await _client.GetAsync("/api/v1/sessions/statuses/first?fileName=x&fileExtension=xlsx&since=2000-01-01T00:00:00Z"));
+        Assert.Equal(1, firstEver.GetProperty("statusParamsDict").GetProperty("step").GetInt32());
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync("/api/v1/sessions/statuses/first?fileName=x&fileExtension=xlsx&since=2100-01-01T00:00:00Z")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/api/v1/sessions/statuses/first?fileName=x&fileExtension=xlsx")).StatusCode);
 
         var refreshed = await Data(await _client.PostAsJsonAsync("/api/v1/auth/refresh", new { accessToken = token, refreshToken = refresh }));
         Assert.Equal(id, refreshed.GetProperty("user").GetProperty("id").GetString());
@@ -197,6 +205,17 @@ public class DockerIntegrationTests
         Assert.Equal(excel, await _client.GetByteArrayAsync(url));
         Assert.Equal(excel, await _client.GetByteArrayAsync($"/api/v1/storage/{id}/objects/{objectName}"));
         Assert.Equal(HttpStatusCode.NotFound, (await _client.GetAsync($"/api/v1/storage/{id}/objects/missing/file.xlsx")).StatusCode);
+        // Низкоуровневая загрузка объекта без документа: перезапись, чтение, несуществующий бакет.
+        int documentsBefore = (await Data(await _client.GetAsync($"/api/v1/users/{id}/documents"))).GetArrayLength();
+        using var rawUpload = new MultipartFormDataContent { { new ByteArrayContent(new byte[] { 1, 2, 3 }), "file", "raw.bin" } };
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.PutAsync($"/api/v1/storage/{id}/objects/raw/data.bin", rawUpload)).StatusCode);
+        Assert.Equal(new byte[] { 1, 2, 3 }, await _client.GetByteArrayAsync($"/api/v1/storage/{id}/objects/raw/data.bin"));
+        using var rawOverwrite = new MultipartFormDataContent { { new ByteArrayContent(new byte[] { 9 }), "file", "raw.bin" } };
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.PutAsync($"/api/v1/storage/{id}/objects/raw/data.bin", rawOverwrite)).StatusCode);
+        Assert.Equal(new byte[] { 9 }, await _client.GetByteArrayAsync($"/api/v1/storage/{id}/objects/raw/data.bin"));
+        using var rawMissingBucket = new MultipartFormDataContent { { new ByteArrayContent(new byte[] { 1 }), "file", "raw.bin" } };
+        Assert.Equal(HttpStatusCode.NotFound, (await _client.PutAsync("/api/v1/storage/no-such-bucket-xyz/objects/raw.bin", rawMissingBucket)).StatusCode);
+        Assert.Equal(documentsBefore, (await Data(await _client.GetAsync($"/api/v1/users/{id}/documents"))).GetArrayLength());
 
         // Анализ: загруженный файл и объект хранилища дают одинаковый результат через один эндпоинт.
         using var fromStorage = new MultipartFormDataContent { { new StringContent(id), "bucket" }, { new StringContent(objectName), "objectName" } };

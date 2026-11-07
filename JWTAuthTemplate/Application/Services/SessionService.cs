@@ -44,6 +44,12 @@ public sealed class SessionService : ISessionService
         return (await _repository.GetByFileAsync(userId, fileName, fileExtension)).Select(s => ToDto(s)!).ToList();
     }
 
+    public async Task<UserSessionStatusDTO?> GetFirstSinceAsync(string userId, string fileName, string fileExtension, DateTime sinceUtc)
+    {
+        ValidateFile(fileName, fileExtension);
+        return ToDto(await _repository.GetFirstSinceAsync(userId, fileName, fileExtension, sinceUtc));
+    }
+
     private async Task EnsureUserAsync(string userId)
     {
         if (string.IsNullOrWhiteSpace(userId) || !await _repository.UserExistsAsync(userId))

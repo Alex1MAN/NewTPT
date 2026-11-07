@@ -13,4 +13,7 @@ public interface ISessionStatusRepository
 
     /// <summary>Все статусы файла, от новых к старым.</summary>
     Task<List<UserSessionStatus>> GetByFileAsync(string userId, string fileName, string fileExtension);
+
+    /// <summary>Первый статус файла, зафиксированный не раньше указанного момента (UTC).</summary>
+    Task<UserSessionStatus?> GetFirstSinceAsync(string userId, string fileName, string fileExtension, DateTime since);
 }

@@ -101,7 +101,7 @@ public class HttpContractTests : IClassFixture<ApiFactory>
             "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/refresh",
             "/api/v1/roles", "/api/v1/roles/{roleName}",
             "/api/v1/users/by-username/{username}", "/api/v1/users/{userId}/roles", "/api/v1/users/{userId}/roles/{roleName}",
-            "/api/v1/sessions/statuses", "/api/v1/sessions/statuses/latest",
+            "/api/v1/sessions/statuses", "/api/v1/sessions/statuses/latest", "/api/v1/sessions/statuses/first",
             "/api/v1/users/{userId}/documents", "/api/v1/documents/{documentId}", "/api/v1/documents/{documentId}/versions",
             "/api/v1/document-versions/{versionId}", "/api/v1/document-versions/{versionId}/content",
             "/api/v1/users/{userId}/uploads/{uploadId}/chunks/{chunkIndex}", "/api/v1/users/{userId}/uploads/{uploadId}/complete",
@@ -124,6 +124,6 @@ public class HttpContractTests : IClassFixture<ApiFactory>
                     $"{operation.Name.ToUpperInvariant()} {path.Name} has no description");
             }
         }
-        Assert.Equal(34, operations);
+        Assert.Equal(36, operations);
     }
 }

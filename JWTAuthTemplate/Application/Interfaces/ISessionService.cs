@@ -16,4 +16,7 @@ public interface ISessionService
 
     /// <summary>Все статусы файла, от новых к старым.</summary>
     Task<List<UserSessionStatusDTO>> GetByFileAsync(string userId, string fileName, string fileExtension);
+
+    /// <summary>Первый статус файла не раньше момента <paramref name="sinceUtc"/>.</summary>
+    Task<UserSessionStatusDTO?> GetFirstSinceAsync(string userId, string fileName, string fileExtension, DateTime sinceUtc);
 }

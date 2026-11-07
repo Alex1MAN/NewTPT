@@ -23,8 +23,13 @@ public sealed class MinioObjectStorage : IObjectStorage
     }
 
     public async Task PutAsync(string bucket, string objectName, Stream data, long length, CancellationToken ct = default)
-        => await _client.PutObjectAsync(new PutObjectArgs().WithBucket(bucket).WithObject(objectName)
+    {
+        // SDK не сообщает об отсутствии бакета при записи, поэтому проверка выполняется явно.
+        if (!await _client.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket), ct))
+            throw new KeyNotFoundException($"Bucket '{bucket}' not found.");
+        await _client.PutObjectAsync(new PutObjectArgs().WithBucket(bucket).WithObject(objectName)
             .WithStreamData(data).WithObjectSize(length).WithContentType("application/octet-stream"), ct);
+    }
 
     public async Task<byte[]> ReadAllBytesAsync(string bucket, string objectName, long? maxBytes = null, CancellationToken ct = default)
     {

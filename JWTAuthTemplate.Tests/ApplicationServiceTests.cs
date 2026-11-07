@@ -151,6 +151,10 @@ public class ApplicationServiceTests
         await Assert.ThrowsAsync<ArgumentException>(() => service.GetLatestAsync("u", " ", "csv"));
         await Assert.ThrowsAsync<ArgumentException>(() => service.GetLatestAsync("u", asOfUtc: moment));
         await Assert.ThrowsAsync<ArgumentException>(() => service.GetByFileAsync("u", "x", ""));
+        // Первый статус не раньше момента: та же проверка пары имя/расширение.
+        repository.Setup(r => r.GetFirstSinceAsync("u", "x", "csv", moment)).ReturnsAsync(new UserSessionStatus { Id = 4, UserId = "u" });
+        Assert.Equal(4, (await service.GetFirstSinceAsync("u", "x", "csv", moment))!.Id);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.GetFirstSinceAsync("u", "x", "", moment));
     }
 
     [Fact]

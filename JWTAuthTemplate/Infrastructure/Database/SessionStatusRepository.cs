@@ -33,6 +33,10 @@ public sealed class SessionStatusRepository : ISessionStatusRepository
             .OrderByDescending(s => s.ActualAt).ThenByDescending(s => s.Id)
             .ToListAsync();
 
+    public Task<UserSessionStatus?> GetFirstSinceAsync(string userId, string fileName, string fileExtension, DateTime since)
+        => ByFile(userId, fileName, fileExtension).Where(s => s.ActualAt >= since)
+            .OrderBy(s => s.ActualAt).ThenBy(s => s.Id).FirstOrDefaultAsync();
+
     private IQueryable<UserSessionStatus> ByUser(string userId)
         => _context.UserSessionStatuses.AsNoTracking().Where(s => s.UserId == userId);
 
